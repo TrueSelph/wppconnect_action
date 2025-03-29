@@ -130,7 +130,7 @@ class WppconnectAPI:
             elif payload["message_type"] == "location":
                 payload["location"] = {
                     "latitude": data.get("lat", ""),
-                    "longitude": data.get("lng", "")
+                    "longitude": data.get("lng", ""),
                 }
             elif payload["message_type"] in ["audio", "ptt", "sticker"]:
                 payload["media"] = data.get("body", "")
