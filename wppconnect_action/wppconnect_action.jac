@@ -14,11 +14,11 @@ node WppconnectAction :Action: {
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
 
-    has master_key:str = "";
-    has base_url:str = "";
-    has api_key:str = "";
-    has api_url:str = "";
-    has instance_id:str = ""; # the wppconnect instance ID
+    has master_key:str = ""; # WPPConnect Server Secret Key
+    has base_url:str = ""; # Jivas Base URL
+    has api_key:str = ""; # WPPConnect Server API Key for this session
+    has api_url:str = ""; # WPPConnect Server URL
+    has instance_id:str = ""; # WPPConnect Server Instance ID
     has webhook_url:str = "";
     has webhook_properties:dict = {};
     has chunk_length:int = 1024;
@@ -46,13 +46,26 @@ node WppconnectAction :Action: {
 
             if (not self.base_url) {
                 self.base_url = f"{os.environ.get('JIVAS_BASE_URL','')}";
+                if not self.base_url {
+                    self.logger.error('JIVAS_BASE_URL is not set');
+                    return {};
+                }
             }
 
-            if(not self.api_url and os.environ.get('JIVAS_ENVIRONMENT') != "development") {
-                agent_name = self.get_agent().name;
-                agent_name = agent_name.replace(" ", "-");
-                agent_name = agent_name.replace("_", "-");
-                self.api_url = f"https://{agent_name}-wppconnect.trueselph.com";
+            if (not self.master_key) {
+                self.master_key = f"{os.environ.get('WPP_MASTER_KEY','')}";
+                if not self.master_key {
+                    self.logger.error('WPP_MASTER_KEY is not set');
+                    return {};
+                }
+            }
+
+            if(not self.api_url) {
+                self.api_url = f"{os.environ.get('WPP_API_URL','')}";
+                if not self.api_url {
+                    self.logger.error('WPP_API_URL is not set');
+                    return {};
+                }
             }
 
             # register webhook is enabled
