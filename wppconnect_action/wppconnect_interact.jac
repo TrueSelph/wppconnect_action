@@ -1,14 +1,16 @@
 import:py logging;
 import:py os;
+import:py uuid;
 import:py mimetypes;
 import:py from logging { Logger }
 import:py from jivas.agent.modules.agentlib.utils { Utils }
-import:py from .modules.wppconnect_api { WppconnectAPI }
+import:py from .modules.wppconnect_api { WPPConnectAPI }
 import:jac from jivas.agent.core.agent { Agent }
 import:jac from jivas.agent.memory.frame { Frame }
 import:jac from jivas.agent.action.action { Action }
 import:jac from jivas.agent.action.interact { interact }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import:py from jvserve.lib.file_interface { file_interface }
 
 walker wppconnect_interact :interact_graph_walker: {
     # called via a webhook whenever there are verification requests or inbound messages
@@ -32,7 +34,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
 
         # parse data if we've gotten this far..
-        data = WppconnectAPI.parse_inbound_message(request = self.params);
+        data = WPPConnectAPI.parse_inbound_message(request = self.params);
         if(not data) {
             Jac.get_context().status = 200;
             disengage;
@@ -43,7 +45,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             access = access_control_action_node.has_action_access(
                 session_id=data['sender_number'],
-                action_label='WppconnectAction',
+                action_label='WPPConnectAction',
                 channel='whatsapp'
             );
 
@@ -58,7 +60,7 @@ walker wppconnect_interact :interact_graph_walker: {
             disengage;
         }
 
-        if( action_node := (here.get_actions().get(action_label='WppconnectAction')) ) {
+        if( action_node := (here.get_actions().get(action_label='WPPConnectAction')) ) {
             if(not action_node.enabled) {
                 Jac.get_context().status = 200;
                 disengage;
@@ -222,7 +224,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
                     if(audio) {
                         # sends audio via wppconnect message using url
-                        response = WppconnectAPI.send_audio_base64(phone_number=frame_node.session_id, session_id=action_node.instance_id, base64_encoded = audio, api_url = action_node.api_url, api_key = action_node.api_key, is_group=data["isGroup"]);
+                        response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio);
                         has_tts_response = True;
                     }
                 }
@@ -240,14 +242,28 @@ walker wppconnect_interact :interact_graph_walker: {
         # add document resource to data node in interaction
         if(self.is_directed_message(data)) {
 
-            encoded_data = data['media'];
+            # decode base64 encoded data into bytes
+            file_data = base64.b64decode(data['media']);
             name = data["message_id"].split(".")[1];
             extension = mimetypes.guess_extension(data['mime_type']);
-            file_path = f".files/{name}{extension}";
-            url_path = f"{os.environ.get('JIVAS_FILES_URL','http://localhost:9000/files')}/{name}{extension}";
-            oo=WppconnectAPI.get_media(encoded_data, file_path);
-            data['media'] = url_path;
 
+            # ensure the output filename is without whitespaces and slashes
+            output_filename = f"wa_{str(uuid.uuid4())}_{name.replace(" ", "_").replace("/", "_").replace("\\", "_")}{extension}";
+            output_file_path = f"wpp/{output_filename}";
+
+            # save document to the file system
+            file_interface.save_file(output_file_path, file_data);
+
+            # retrieve file url
+            file_url = file_interface.get_file_url(output_file_path);
+
+            # if the file url is not available, set the source to the filename
+            if not file_url {
+                self.logger.error(f"Unable to save file {output_filename} to the file system.");
+                return;
+            }
+
+            data['media'] = file_url;
 
             message = (root spawn interact(
                 utterance = data['caption'] if data['caption'] else f'sent {data['message_type']} file in the chat',
@@ -256,7 +272,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = {"label": "whatsapp_media", "data_type": "dict", "content": data}
+                data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
             )).message;
 
             # handle reply
@@ -281,7 +297,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = {"label": "whatsapp_location", "data_type": "dict", "content": data}
+                data = [{"label": "whatsapp_location", "meta": {}, "content": data}]
             )).message;
 
             # handle reply

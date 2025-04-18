@@ -1,9 +1,9 @@
-"""This module contains the WppconnectAPI class for handling requests to the WhatsApp API."""
+"""API module for interacting with the WPPConnect HTTP API."""
 
 import base64
 import logging
-import time
-from typing import Optional
+import os
+from typing import Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -11,710 +11,891 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class WppconnectAPI:
-    """Class for handling requests to the WhatsApp API."""
+class WPPConnectAPI:
+    """Class for interacting with the WPPConnect API."""
 
     logger = logging.getLogger(__name__)
 
-    @staticmethod
-    def send_request(
-        url: str,
-        data: Optional[dict] = None,
+    def __init__(
+        self, api_url: str, session: str, token: str, secret_key: Optional[str] = None
+    ) -> None:
+        """
+        Initializes the WPPConnectAPI object with base URL, instance, and credentials.
+
+        :param api_url: API base URL.
+        :param session: WPPConnect instance ID.
+        :param token: API authentication key.
+        :param secret_key: Master key for instance creation (if any).
+        """
+        self.api_url = api_url.rstrip("/")
+        self.session = session
+        self.token = token
+        self.secret_key = secret_key or os.environ.get("WPP_SECRET_KEY", "")
+
+    def send_rest_request(
+        self,
+        endpoint: str,
         method: str = "POST",
+        data: Optional[dict] = None,
+        params: Optional[dict] = None,
         headers: Optional[dict] = None,
+        json_body: bool = True,
+        use_full_url: bool = False,
     ) -> dict:
-        """
-        Handles HTTP requests with centralized logic for the WhatsApp API.
-
-        Parameters:
-        - url (str): Endpoint URL.
-        - data (dict): Payload for the request.
-        - method (str): HTTP method (GET, POST, etc.).
-        - headers (dict): Custom headers.
-
-        Returns:
-        - dict: Response JSON or error message.
-        """
+        """Generic HTTP request to WPPConnect API. Handles GET, POST, PUT, DELETE."""
         if headers is None:
-            headers = {"Content-Type": "application/json"}
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.token}",
+            }
+
+        url = (
+            endpoint
+            if use_full_url
+            else f"{self.api_url}/{self.session}/{endpoint.lstrip('/')}"
+        )
+        json_payload = data if json_body else None
+        body = None if json_body else data
 
         try:
             response = requests.request(
-                method=method, url=url, json=data, headers=headers
+                method=method,
+                url=url,
+                headers=headers,
+                json=json_payload,
+                data=body,
+                params=params,
             )
-            if response.status_code // 100 == 2:  # Check for successful status codes
-                return response.json()
-            else:
-                error = f"Request failed with status {response.status_code}: {response.text}"
-                WppconnectAPI.logger.error(error)
-                return {"error": error}
+            response.raise_for_status()
+            if response.content:
+                try:
+                    return response.json()
+                except Exception:
+                    return {"ok": True, "raw": response.content}
+            return {"ok": True, "no_content": True}
         except requests.RequestException as e:
-            error = f"Request error: {str(e)}"
-            WppconnectAPI.logger.error(error)
-            return {"error": error}
+            self.logger.error(f"WPPConnect request error: {str(e)}")
+            return {"ok": False, "error": str(e)}
+
+    # Utility
 
     @staticmethod
     def parse_inbound_message(request: dict) -> dict:
-        """
-        Parses an inbound message payload and extracts relevant details.
-
-        Parameters:
-        - request (dict): Incoming message payload.
-
-        Returns:
-        - dict: Parsed payload data with extracted information.
-                Returns an empty dictionary if the payload is invalid.
-        """
+        """Parses an inbound message request payload and returns extracted values."""
         payload = {}
-        try:
-            # Extract the body from the request payload
-            data = request
 
-            # Validate the event type
+        try:
             valid_events = ["onmessage", "onpollresponse", "onack"]
-            if data.get("event") not in valid_events:
+            event = request.get("event")
+            if event not in valid_events:
                 return {}
 
-            # Initialize the payload with default values
             payload = {
-                "sender_number": data.get("from", "").replace(
-                    "@c.us", ""
-                ),  # Extract sender's number
-                "message_id": data.get("id", ""),  # Extract message ID
-                "event_type": data.get(
-                    "dataType", data.get("event", "")
-                ),  # Identify the event type
-                "message_type": data.get("type", ""),  # Identify the media type
-                "fromMe": False,  # Determine if the message is sent by the agent
-                "author": data.get("author", "").replace(
-                    "@c.us", ""
-                ),  # Extract author of the message
-                "agent_number": data.get("to", "").replace(
-                    "@c.us", ""
-                ),  # Extract the agent's number
-                "caption": data.get("caption", ""),  # Extract caption for media
-                "location": data.get(
-                    "location", {}
-                ),  # Extract location details if provided
-                "isGroup": False,  # Default group flag
+                "message_id": request.get("id", ""),
+                "event_type": request.get("dataType", event),
+                "message_type": request.get("type", "unknown"),
+                "author": str(request.get("author", "").replace("@c.us", "")),
+                "sender": str(request.get("from", "").replace("@c.us", "")),
+                "receiver": str(request.get("to", "").replace("@c.us", "")),
+                "caption": request.get("caption", ""),
+                "location": request.get("location", {}),
+                "fromMe": request.get("fromMe", False),
+                "isGroup": False,
             }
 
-            # fromeMe
+            # fromMe correction if misplaced
             if isinstance(payload["fromMe"], dict):
-                # from me
-                payload["fromMe"] = payload["fromMe"].get("fromMe", "")
+                payload["fromMe"] = payload["fromMe"].get("fromMe", False)
 
-            # Extract parent message details if available
-            if "quotedMsg" in data:
-                payload["parent_message"] = data["quotedMsg"]
+            # quotedMsg/parent message
+            if "quotedMsg" in request:
+                payload["parent_message"] = request["quotedMsg"]
 
-            # Identify if the message is part of a group
+            # Group detection
             if (
                 payload["author"]
-                and payload["sender_number"]
-                and payload["author"] != payload["sender_number"]
+                and payload["sender"]
+                and payload["author"] != payload["sender"]
             ):
                 payload["isGroup"] = True
 
-            # Extract additional details based on the media type
             if payload["message_type"] == "chat":
-                payload["body"] = data.get("content", "")
+                payload["body"] = request.get("content", "")
             elif payload["message_type"] in ["image", "video", "document"]:
-                payload.update(
-                    {
-                        "media": data.get("body", ""),
-                        "filename": data.get("filename", ""),
-                        "mime_type": data.get("mimetype", ""),
-                    }
-                )
+                payload["media"] = request.get("body", "")
+                payload["filename"] = request.get("filename", "")
+                payload["mime_type"] = request.get("mimetype", "")
             elif payload["message_type"] == "location":
                 payload["location"] = {
-                    "latitude": data.get("lat", ""),
-                    "longitude": data.get("lng", ""),
+                    "latitude": request.get("lat", ""),
+                    "longitude": request.get("lng", ""),
                 }
             elif payload["message_type"] in ["audio", "ptt", "sticker"]:
-                payload["media"] = data.get("body", "")
+                payload["media"] = request.get("body", "")
             elif payload["message_type"] in ["contacts", "vcard"]:
-                payload["contact"] = data.get("body", {})
+                payload["contact"] = request.get("body", {})
             elif payload["event_type"] == "onpollresponse":
-                payload.update(
-                    {
-                        "poll_id": data.get("msgId", {}).get("_serialized", ""),
-                        "selectedOptions": data.get("selectedOptions", ""),
+                payload["poll_id"] = request.get("msgId", {}).get("_serialized", "")
+                payload["selectedOptions"] = request.get("selectedOptions", "")
+
+            payload["sender_name"] = request.get("notifyName", "")
+            return payload
+
+        except Exception as e:
+            WPPConnectAPI.logger.error("Error parsing inbound message: %s", str(e))
+            return {}
+
+    def register_session(
+        self, webhook_url: str = "", wait_qr_code: bool = True
+    ) -> dict:
+        """
+        Initializes the WPPConnect session:
+        1. Checks session status.
+        2. If not active, creates a token (if required), starts the session, and fetches QR code.
+        3. If active, returns number/session info.
+        Returns a dict with status, and either QR code (for scan) or bound device info.
+        """
+        # 1. Get session status
+        status_resp = self.status()
+        status = status_resp.get("status", "").upper()
+
+        # These status keys may vary depending on your WPPConnect version
+        # Active/connected session
+        if status == "CONNECTED":
+            # Get the host device info/number
+            device_info = self.get_host_device()
+            return {
+                "status": "CONNECTED",
+                "message": "Session is already active and connected.",
+                "device": device_info,
+                "session": self.session,
+                "token": self.token,
+            }
+        # Some deployments may say "QRCODE" or "DISCONNECTED" or "CLOSED"
+        elif status in {"QRCODE", "DISCONNECTED", "CLOSED", ""}:
+            # Optionally generate instance/token if needed
+            if "Unauthorized" in str(status_resp.get("error", "")) or status == "":
+                # This corresponds to a missing/invalid token, so attempt to create instance/token
+                create_res = self.create_session()
+                if not create_res.get("token"):
+                    return {
+                        "status": "ERROR",
+                        "message": "Could not create instance or get token.",
+                        "details": create_res,
                     }
-                )
+                self.token = create_res["token"]
 
-            # Add additional sender details if available
-            sender_name = data.get("notifyName", "")
-            if sender_name:
-                payload["sender_name"] = sender_name
-
-                return payload
-            return {}
-
-        except Exception as e:
-            # Log the error for debugging purposes
-            WppconnectAPI.logger.error(f"Error parsing inbound message: {str(e)}")
-            return {}
-
-    @staticmethod
-    def send_text_message(
-        phone_number: str,
-        message: str,
-        api_url: str,
-        api_key: str,
-        session_id: str,
-        is_group: bool = False,
-        msg_id: str = "",
-        options: Optional[dict] = None,
-        is_newsletter: bool = False,
-    ) -> dict:
-        """
-        Sends a text message using the WhatsApp API.
-
-        Parameters:
-        - phone_number (str): Recipient phone number.
-        - message (str): Message content.
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - session_id (str): Session ID.
-        - is_group (bool): Whether the message is for a group.
-        - msg_id (str): Optional message ID.
-
-        Returns:
-        - dict: API response.
-        """
-        if msg_id:
-            response = WppconnectAPI.reply_text_message(
-                phone_number=phone_number,
-                message=message,
-                api_url=api_url,
-                api_key=api_key,
-                session_id=session_id,
-                is_group=is_group,
-                msg_id=msg_id,
+            # Start the session, register webhook, and request QR code
+            start_res = self.start_session(
+                webhook=webhook_url, wait_qr_code=wait_qr_code
             )
-            return response
+            if start_res.get("qrcode"):
+                # Some deployments return QR code directly
+                qrcode_b64 = start_res["qrcode"]
+            else:
+                # Otherwise, get it from /qrcode-session
+                qr_resp = self.qrcode()
+                qrcode_b64 = qr_resp.get("qrcode")
+            return {
+                "status": "AWAITING_QRSCAN",
+                "message": "Session created or started. Awaiting QR Code scan.",
+                "qrcode": qrcode_b64,
+                "session": self.session,
+                "token": self.token,
+            }
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
-        data = {
-            "phone": phone_number,
-            "isGroup": is_group,
-            "isNewsletter": is_newsletter,
-            "message": message,
-            "options": options,
+        # Some other status
+        return {
+            "status": status,
+            "message": f"Session status: {status}",
+            "details": status_resp,
         }
 
-        return WppconnectAPI.send_request(
-            f"{api_url}/api/{session_id}/send-message", data=data, headers=headers
+    # 1. Instance/session related
+
+    def status(self) -> dict:
+        """GET /status-session"""
+        return self.send_rest_request("status-session", method="GET")
+
+    def show_all_sessions(self) -> dict:
+        """
+        GET /api/{secretkey}/show-all-sessions
+        Retrieves all sessions using the secret key.
+
+        Returns:
+            dict: Response from the server.
+        """
+        if not self.secret_key:
+            return {"ok": False, "error": "secret_key required"}
+
+        url = f"{self.api_url}/{self.secret_key}/show-all-sessions"
+        return self.send_rest_request(url, method="GET", use_full_url=True)
+
+    def check_connection(self) -> dict:
+        """
+        GET /api/{session}/check-connection-session
+        Checks the connection status of the session.
+
+        Returns:
+            dict: Response from the server.
+        """
+        return self.send_rest_request("check-connection-session", method="GET")
+
+    def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
+        """POST /start-session"""
+        data = {"webhook": webhook, "waitQrCode": wait_qr_code}
+        return self.send_rest_request("start-session", data=data)
+
+    def close_session(self) -> dict:
+        """POST /close-session"""
+        return self.send_rest_request("close-session")
+
+    def logout_session(self) -> dict:
+        """POST /logout-session"""
+        return self.send_rest_request("logout-session")
+
+    def qrcode(self) -> dict:
+        """GET /qrcode-session (base64 encoded image returned)"""
+        response = requests.get(
+            f"{self.api_url}/{self.session}/qrcode-session",
+            headers={"Authorization": f"Bearer {self.token}"},
         )
+        if response.ok:
+            return {"qrcode_base64": base64.b64encode(response.content).decode("ascii")}
+        else:
+            return {"ok": False, "error": response.text}
 
-    @staticmethod
-    def send_media(
-        phone_number: str,
-        media_url: str,
-        api_url: str,
-        api_key: str,
-        session_id: str,
-        caption: str = "",
-        file_name: str = "",
+    def get_host_device(self) -> dict:
+        """GET /host-device"""
+        return self.send_rest_request("host-device", method="GET")
+
+    def profile_exists(self) -> dict:
+        """GET /profile-exists"""
+        return self.send_rest_request("profile-exists", method="GET")
+
+    def create_session(self) -> dict:
+        """POST /{session}/{secretKey}/generate-token"""
+        if not self.secret_key:
+            return {"ok": False, "error": "secret_key required"}
+        url = f"{self.api_url}/{self.session}/{self.secret_key}/generate-token"
+        return self.send_rest_request(url, method="POST", use_full_url=True)
+
+    # 2. Messaging
+
+    def send_message(
+        self,
+        phone: str,
+        message: str,
         is_group: bool = False,
         is_newsletter: bool = False,
-    ) -> dict:
-        """
-        Sends media via the WhatsApp API.
-
-        Parameters:
-        - phone_number (str): Recipient phone number.
-        - media_url (str): URL of the media file.
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - session_id (str): Session ID.
-        - caption (str): Optional caption for the media.
-        - file_name (str): Optional file name.
-
-        Returns:
-        - dict: API response.
-        """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
-        data = {
-            "phone": phone_number,
-            "isGroup": is_group,
-            "isNewsletter": is_newsletter,
-            "filename": file_name,
-            "caption": caption,
-            "path": media_url,
-        }
-        return WppconnectAPI.send_request(
-            f"{api_url}/api/{session_id}/send-file", data=data, headers=headers
-        )
-
-    @staticmethod
-    def send_poll(
-        phone_number: str,
-        content: dict,
-        api_url: str,
-        api_key: str,
-        session_id: str,
-        is_group: bool = False,
+        message_id: str = "",
         options: Optional[dict] = None,
     ) -> dict:
-        """
-        Sends a poll via the WhatsApp API.
-
-        Parameters:
-        - phone_number (str): Recipient phone number.
-        - content (dict): Poll content with questions and options.
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - session_id (str): Session ID.
-        - is_group (bool): Whether the message is for a group.
-        - options (dict): Additional options for the poll.
-
-        Returns:
-        - dict: API response.
-        """
-        if options is None:
-            options = {"selectableCount": 1}
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
+        """POST /send-message"""
         data = {
-            "phone": phone_number,
+            "phone": phone,
             "isGroup": is_group,
-            "name": content.get("name", ""),
-            "choices": content.get("choices", []),
-            "options": options,
-        }
-        return WppconnectAPI.send_request(
-            f"{api_url}/api/{session_id}/send-poll-message", data=data, headers=headers
-        )
-
-    @staticmethod
-    def download_media(media_url: str, filename: str) -> dict:
-        """
-        Downloads media from a given URL.
-
-        Parameters:
-        - media_url (str): URL of the media to download.
-        - filename (str): Path to save the file.
-
-        Returns:
-        - dict: Status of the operation.
-        """
-        try:
-            response = requests.get(media_url)
-            response.raise_for_status()
-            with open(filename, "wb") as file:
-                file.write(response.content)
-            return {"status": "success", "file": filename}
-        except Exception as e:
-            WppconnectAPI.logger.error(f"Error downloading media: {str(e)}")
-            return {"status": "error", "error": str(e)}
-
-    @staticmethod
-    def encode_media_base64(file_path: str) -> str:
-        """
-        Encodes a file into base64 format.
-
-        Parameters:
-        - file_path (str): Path to the file.
-
-        Returns:
-        - str: Base64-encoded string.
-        """
-        try:
-            with open(file_path, "rb") as file:
-                return base64.b64encode(file.read()).decode("utf-8")
-        except Exception as e:
-            WppconnectAPI.logger.error(f"Error encoding file to base64: {str(e)}")
-            return ""
-
-    @staticmethod
-    def send_audio_base64(
-        phone_number: str,
-        base64_encoded: str,
-        api_url: str,
-        api_key: str,
-        session_id: str,
-        is_group: bool = False,
-    ) -> dict:
-        """
-        Sends an audio message encoded in base64 format.
-
-        Parameters:
-        - phone_number (str): Recipient phone number.
-        - media_url (str): URL of the media to send.
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - session_id (str): Session ID.
-        - is_group (bool): Whether the message is for a group.
-
-        Returns:
-        - dict: API response.
-        """
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
-        data = {"phone": phone_number, "isGroup": is_group, "base64Ptt": base64_encoded}
-        return WppconnectAPI.send_request(
-            f"{api_url}/api/{session_id}/send-voice-base64", data=data, headers=headers
-        )
-
-    @staticmethod
-    def reply_text_message(
-        phone_number: str,
-        message: str,
-        api_url: str,
-        api_key: str,
-        session_id: str,
-        msg_id: str,
-        is_group: bool = False,
-    ) -> dict:
-        """
-        Sends a reply to a specific message.
-
-        Parameters:
-        - phone_number (str): Recipient phone number.
-        - message (str): Reply message content.
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - session_id (str): Session ID.
-        - msg_id (str): Message ID to reply to.
-        - is_group (bool): Whether the reply is for a group.
-
-        Returns:
-        - dict: API response.
-        """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
-        data = {
-            "phone": phone_number,
-            "isGroup": is_group,
+            "isNewsletter": is_newsletter,
             "message": message,
-            "messageId": msg_id,
         }
-        return WppconnectAPI.send_request(
-            f"{api_url}/api/{session_id}/send-reply", data=data, headers=headers
-        )
 
-    @staticmethod
-    def send_voicenote(
-        phone_number: str,
-        media_url: str,
-        api_url: str,
-        api_key: str,
-        session_id: str,
+        if options:
+            data["options"] = options
+
+        if message_id:
+            data["messageId"] = message_id
+            return self.send_rest_request("send-reply", data=data)
+
+        return self.send_rest_request("send-message", data=data)
+
+    def send_reply(
+        self, phone: str, message: str, message_id: str, is_group: bool = False
+    ) -> dict:
+        """POST /send-reply"""
+        data = {
+            "phone": phone,
+            "message": message,
+            "isGroup": is_group,
+            "messageId": message_id,
+        }
+        return self.send_rest_request("reply-message", data=data)
+
+    def send_location(
+        self,
+        phone: str,
+        latitude: float,
+        longitude: float,
+        title: str = "",
+        is_group: bool = False,
+    ) -> dict:
+        """POST /send-location"""
+        data = {
+            "phone": phone,
+            "latitude": latitude,
+            "longitude": longitude,
+            "title": title,
+            "isGroup": is_group,
+        }
+        return self.send_rest_request("send-location", data=data)
+
+    def send_contact(self, phone: str, contactid: str, is_group: bool = False) -> dict:
+        """POST /send-contact"""
+        data = {"phone": phone, "contactid": contactid, "isGroup": is_group}
+        return self.send_rest_request("send-contact", data=data)
+
+    def send_image(
+        self,
+        phone: str,
+        is_group: bool = False,
+        is_newsletter: bool = False,
+        is_lid: bool = False,
+        filename: str = "",
+        caption: str = "",
+        file_url: str = "",
+    ) -> dict:
+        """POST /send-image"""
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "isNewsletter": is_newsletter,
+            "isLid": is_lid,
+            "filename": filename,
+            "caption": caption,
+            "base64": self.file_url_to_base64(file_url),
+        }
+        return self.send_rest_request("send-image", data=data)
+
+    def send_file(
+        self,
+        phone: str,
+        is_group: bool = False,
+        is_newsletter: bool = False,
+        is_lid: bool = False,
+        filename: str = "",
+        caption: str = "",
+        file_url: str = "",
+    ) -> dict:
+        """POST /send-file"""
+
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "isNewsletter": is_newsletter,
+            "isLid": is_lid,
+            "filename": filename,
+            "caption": caption,
+            "base64": self.file_url_to_base64(file_url),
+        }
+        return self.send_rest_request("send-file", data=data)
+
+    def send_file_base64(
+        self,
+        phone: str,
+        base64: str,
+        filename: str = "",
+        caption: str = "",
+        is_group: bool = False,
+        is_newsletter: bool = False,
+        is_lid: bool = False,
+    ) -> dict:
+        """POST /send-file-base64"""
+        data = {
+            "phone": phone,
+            "base64": base64,
+            "filename": filename,
+            "caption": caption,
+            "isGroup": is_group,
+            "isNewsletter": is_newsletter,
+            "isLid": is_lid,
+        }
+        return self.send_rest_request("send-file-base64", data=data)
+
+    def send_voice(
+        self,
+        session: str,
+        phone: str,
+        file_url: str,
         is_group: bool = False,
         quoted_message_id: str = "",
     ) -> dict:
         """
-        Sends a voice note.
+        POST /api/{session}/send-voice
 
-        Parameters:
-        - phone_number (str): Recipient phone number.
-        - media_url (str): URL of the voice note.
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - session_id (str): Session ID.
-        - is_group (bool): Whether the voice note is for a group.
-        - quoted_message_id (str): Quoted message ID.
+        Args:
+            session (str): The session identifier for the API (inserted in path).
+            phone (str): Recipient phone number/group id.
+            file_url (str): Path to the audio file (voice message).
+            is_group (bool): True if the recipient is a group. Defaults to False.
+            quoted_message_id (str): Optional; message id to quote/reply to. Defaults to "".
 
         Returns:
-        - dict: API response.
+            dict: API response
         """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
         data = {
-            "phone": phone_number,
+            "phone": phone,
             "isGroup": is_group,
-            "path": media_url,
+            "path": file_url,
             "quotedMessageId": quoted_message_id,
         }
-        return WppconnectAPI.send_request(
-            f"{api_url}/api/{session_id}/send-voice", data=data, headers=headers
+        return self.send_rest_request("send-voice", data=data)
+
+    def send_voice_base64(
+        self, phone: str, base64_ptt: str, is_group: bool = False
+    ) -> dict:
+        """POST /send-voice-base64"""
+        data = {"phone": phone, "isGroup": is_group, "base64Ptt": base64_ptt}
+        return self.send_rest_request("send-voice-base64", data=data)
+
+    def send_poll_message(
+        self,
+        phone: str,
+        name: str,
+        choices: list,
+        options: Optional[dict] = None,
+        is_group: bool = False,
+    ) -> dict:
+        """
+        POST /api/{session}/send-poll-message
+
+        Args:
+            session (str): The session identifier for the API (path param).
+            phone (str): The recipient phone number.
+            name (str): The poll name/title.
+            choices (list): A list of choice strings.
+            options (dict, optional): Poll options, e.g. {"selectableCount": 1}. Defaults to None.
+            is_group (bool, optional): True if sending to a group. Defaults to False.
+
+        Returns:
+            dict: API response
+        """
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "name": name,
+            "choices": choices,
+        }
+        if options:
+            data["options"] = options
+
+        return self.send_rest_request("send-poll-message", data=data)
+
+    def send_status_message(
+        self, phone: str, message: str, is_group: bool, message_id: Optional[str] = None
+    ) -> dict:
+        """
+        POST /api/{session}/send-status
+        Sends a status message to a contact or group.
+
+        Args:
+            phone (str): The phone number or group ID to send the message to.
+            message (str): The message text.
+            is_group (bool): Whether the message is being sent to a group.
+            message_id (str, optional): The ID of the original message to reply to. Default is None.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {"phone": phone, "isGroup": is_group, "message": message}
+        if message_id:
+            data["messageId"] = message_id
+
+        return self.send_rest_request("send-status", method="POST", data=data)
+
+    def send_link_preview(
+        self, phone: str, url: str, caption: str, is_group: bool = False
+    ) -> dict:
+        """
+        POST /api/{session}/send-link-preview
+        Sends a message with a link preview to a contact or group.
+
+        Args:
+            phone (str): The phone number or group ID to send the message to.
+            url (str): The URL to include in the message.
+            caption (str): The caption or text to accompany the link.
+            is_group (bool): Whether the message is being sent to a group. Default is False.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {"phone": phone, "isGroup": is_group, "url": url, "caption": caption}
+        return self.send_rest_request("send-link-preview", method="POST", data=data)
+
+    def send_mentioned_message(
+        self, phone: str, message: str, mentioned: List[str], is_group: bool = True
+    ) -> dict:
+        """
+        POST /api/{session}/send-mentioned
+        Sends a message with mentions to specific contacts or a group.
+
+        Args:
+            phone (str): The phone number or group ID to send the message to.
+            message (str): The message text.
+            mentioned (list of str): List of contacts to mention in the message.
+            is_group (bool): Whether the message is being sent to a group. Default is True.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "message": message,
+            "mentioned": mentioned,
+        }
+        return self.send_rest_request("send-mentioned", method="POST", data=data)
+
+    def send_buttons_message(
+        self, phone: str, text: str, buttons: List[dict], is_group: bool = False
+    ) -> dict:
+        """
+        POST /api/{session}/send-buttons
+        Sends a button message to a contact or group. Note: This endpoint is deprecated.
+
+        Args:
+            phone (str): The phone number or group ID to send the message to.
+            text (str): Text to accompany the buttons.
+            buttons (list of dict): List of buttons, each with properties such as 'buttonId', 'button_text', 'type'.
+            is_group (bool): Whether the message is being sent to a group. Default is False.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {"phone": phone, "isGroup": is_group, "text": text, "buttons": buttons}
+        return self.send_rest_request("send-buttons", method="POST", data=data)
+
+    def send_list_message(
+        self,
+        phone: str,
+        description: str,
+        button_text: str,
+        sections: List[dict],
+        is_group: bool = False,
+    ) -> dict:
+        """
+        POST /api/{session}/send-list-message
+        Sends a list message to a contact or group.
+
+        Args:
+            phone (str): The phone number or group ID to send the message to.
+            description (str): Description for the list message.
+            button_text (str): Text for the button.
+            sections (list of dict): List of sections, each with a title and rows containing rowId, title, and description.
+            is_group (bool): Whether the message is being sent to a group. Default is False.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "description": description,
+            "buttonText": button_text,
+            "sections": sections,
+        }
+        return self.send_rest_request("send-list-message", method="POST", data=data)
+
+    def send_order_message(
+        self,
+        phone: str,
+        items: List[dict],
+        is_group: bool = False,
+        options: Optional[dict] = None,
+    ) -> dict:
+        """
+        POST /api/{session}/send-order-message
+        Sends an order message to a contact or group.
+
+        Args:
+            phone (str): The phone number or group ID to send the order message to.
+            items (list of dict): A list of items in the order, each with properties such as 'type', 'name', 'price', and 'qnt'.
+            is_group (bool): Whether the message is being sent to a group. Default is False.
+            options (dict, optional): Additional options such as 'tax', 'shipping', and 'discount'.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {"phone": phone, "isGroup": is_group, "items": items}
+        if options:
+            data["options"] = options
+        return self.send_rest_request("send-order-message", method="POST", data=data)
+
+    # 3. Groups
+
+    def create_group(self, name: str, participants: List[str]) -> dict:
+        """POST /create-group"""
+        data = {"name": name, "participants": participants}
+        return self.send_rest_request("create-group", data=data)
+
+    def group_info(self, group_id: str) -> dict:
+        """GET /group-members/{group_id}"""
+        return self.send_rest_request(f"group-members/{group_id}", method="GET")
+
+    def leave_group(self, group_id: str) -> dict:
+        """POST /leave-group"""
+        data = {"groupId": group_id}
+        return self.send_rest_request("leave-group", data=data)
+
+    def add_group_participant(self, group_id: str, phone: str) -> dict:
+        """POST /add-participant-group"""
+        data = {"groupId": group_id, "phone": phone}
+        return self.send_rest_request("add-participant-group", data=data)
+
+    def remove_group_participant(self, group_id: str, phone: str) -> dict:
+        """POST /remove-participant-group"""
+        data = {"groupId": group_id, "phone": phone}
+        return self.send_rest_request("remove-participant-group", data=data)
+
+    def promote_group_admin(self, group_id: str, phone: str) -> dict:
+        """POST /promote-participant-group"""
+        data = {"groupId": group_id, "phone": phone}
+        return self.send_rest_request("promote-participant-group", data=data)
+
+    def demote_group_admin(self, group_id: str, phone: str) -> dict:
+        """POST /demote-participant-group"""
+        data = {"groupId": group_id, "phone": phone}
+        return self.send_rest_request("demote-participant-group", data=data)
+
+    def set_group_subject(self, group_id: str, title: str) -> dict:
+        """POST /group-subject"""
+        data = {"groupId": group_id, "title": title}
+        return self.send_rest_request("group-subject", data=data)
+
+    def set_group_description(self, group_id: str, description: str) -> dict:
+        """POST /group-description"""
+        data = {"groupId": group_id, "description": description}
+        return self.send_rest_request("group-description", data=data)
+
+    # 4. Contacts
+
+    def get_contacts(self) -> dict:
+        """GET /all-contacts"""
+        return self.send_rest_request("all-contacts", method="GET")
+
+    def get_contact(self, phone: str) -> dict:
+        """GET /contact/{phone}"""
+        return self.send_rest_request(f"contact/{phone}", method="GET")
+
+    def block_contact(self, phone: str, is_group: bool = False) -> dict:
+        """POST /block-contact"""
+        data = {"phone": phone, "isGroup": is_group}
+        return self.send_rest_request("block-contact", data=data)
+
+    def unblock_contact(self, phone: str, is_group: bool = False) -> dict:
+        """POST /unblock-contact"""
+        data = {"phone": phone, "isGroup": is_group}
+        return self.send_rest_request("unblock-contact", data=data)
+
+    def get_blocklist(self) -> dict:
+        """GET /blocklist"""
+        return self.send_rest_request("blocklist", method="GET")
+
+    # 5. Chats
+
+    def list_chats(self, options: Optional[dict] = None) -> dict:
+        """
+        POST /api/{session}/list-chats
+        Retrieves a list of chats. You can pass options to filter the chats.
+
+        Args:
+            options (dict, optional): Options to filter the chats.
+                                    Keys can include 'id', 'count', 'direction',
+                                    'onlyGroups', 'onlyUsers',
+                                    'onlyWithUnreadMessage', 'withLabels'.
+
+        Returns:
+            dict: Response from the server.
+        """
+        return self.send_rest_request("list-chats", method="POST", data=options or {})
+
+    def get_chat_by_id(self, phone: str) -> dict:
+        """GET /chat-by-id/{phone}"""
+        return self.send_rest_request(f"chat-by-id/{phone}", method="GET")
+
+    def clear_chat(self, phone: str, is_group: bool = False) -> dict:
+        """POST /clear-chat"""
+        data = {"phone": phone, "isGroup": is_group}
+        return self.send_rest_request("clear-chat", data=data)
+
+    def archive_chat(self, phone: str, is_group: bool = False) -> dict:
+        """POST /archive-chat"""
+        data = {"phone": phone, "isGroup": is_group, "value": True}
+        return self.send_rest_request("archive-chat", data=data)
+
+    def unarchive_chat(self, phone: str, is_group: bool = False) -> dict:
+        """POST /unarchive-chat"""
+        data = {"phone": phone, "isGroup": is_group, "value": False}
+        return self.send_rest_request("archive-chat", data=data)
+
+    def set_typing_status(
+        self, phone: str, is_group: bool = False, value: bool = True
+    ) -> dict:
+        """
+        POST /api/{session}/typing
+        Sets the typing status for a chat.
+
+        Args:
+            phone (str): The phone number or group ID to set the typing status for.
+            is_group (bool): Whether the chat is a group. Default is False.
+            value (bool): Typing status value. True for typing, False for not typing. Default is True.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {"phone": phone, "isGroup": is_group, "value": value}
+        return self.send_rest_request("typing", method="POST", data=data)
+
+    def set_recording_status(
+        self, phone: str, is_group: bool = False, duration: int = 5, value: bool = True
+    ) -> dict:
+        """
+        POST /api/{session}/recording
+        Sets the recording status for a chat.
+
+        Args:
+            phone (str): The phone number or group ID to set the recording status for.
+            is_group (bool): Whether the chat is a group. Default is False.
+            duration (int): Duration of the recording status in seconds. Default is 5.
+            value (bool): Recording status value. True for recording, False for not recording. Default is True.
+
+        Returns:
+            dict: Response from the server.
+        """
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "duration": duration,
+            "value": value,
+        }
+        return self.send_rest_request("recording", method="POST", data=data)
+
+    # 6. Media (Download/Upload helpers)
+
+    @staticmethod
+    def file_url_to_base64(file_url: str) -> Optional[str]:
+        """
+        Downloads file from any web-URL and encodes contents as base64.
+        Does not store the file to any persistent file or storage backend.
+        """
+        try:
+            response = requests.get(file_url)
+            response.raise_for_status()
+            encoded = base64.b64encode(response.content).decode("utf-8")
+            return encoded
+        except Exception as ex:
+            WPPConnectAPI.logger.error(f"Error downloading or encoding file: {ex}")
+            return None
+
+    # 7. Utility & info
+
+    def device_battery(self) -> dict:
+        """GET /battery-level"""
+        return self.send_rest_request("battery-level", method="GET")
+
+    def mark_unread(self, chatid: str) -> dict:
+        """POST /mark-unread"""
+        data = {"chatId": chatid}
+        return self.send_rest_request("mark-unread", data=data)
+
+    def read_chat(self, chatid: str) -> dict:
+        """POST /send-seen"""
+        data = {"chatId": chatid}
+        return self.send_rest_request("send-seen", data=data)
+
+    def get_profile_picture(self, phone: str) -> dict:
+        """GET /profile-pic"""
+        return self.send_rest_request(
+            "profile-pic", method="GET", params={"phone": phone}
         )
 
-    @staticmethod
-    def get_media(encoded_data: str, file_path: str) -> dict:
-        """
-        Decodes a base64 string and saves it as a file.
+    def get_message_by_id(self, message_id: str) -> dict:
+        """GET /message-by-id"""
+        return self.send_rest_request(
+            "message-by-id", method="GET", params={"messageId": message_id}
+        )
 
-        Parameters:
-        - encoded_data (str): Base64-encoded data.
-        - file_path (str): Path to save the decoded file.
-
-        Returns:
-        - dict: Status of the operation.
-        """
-        try:
-            decoded_data = base64.b64decode(encoded_data)
-            with open(file_path, "wb") as file:
-                file.write(decoded_data)
-            return {"status": "success", "file": file_path}
-        except Exception as e:
-            WppconnectAPI.logger.error(f"Error saving media: {str(e)}")
-            return {"status": "error", "error": str(e)}
-
-    @staticmethod
-    def get_status(instance_id: str, api_key: str, api_url: str) -> dict:
-        """
-        Retrieves the status of a WPPConnect instance.
-
-        Parameters:
-        - instance_id (str): Instance ID.
-        - api_key (str): API authentication key.
-        - api_url (str): API base URL.
-
-        Returns:
-        - dict: Status of the instance.
-        """
-        url = f"{api_url}/api/{instance_id}/status-session"
-
-        headers = {
-            "accept": "*/*",
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            response = requests.get(url, headers=headers)  # Use GET instead of POST
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
-    @staticmethod
-    def start_instance(
-        instance_id: str,
-        api_key: str,
-        api_url: str,
-        webhook: str = "",
-        wait_qr_code: bool = False,
+    def forward_messages(
+        self, phone: str, message_ids: list, is_group: bool = False
     ) -> dict:
-        """
-        Starts a WPPConnect instance.
+        """POST /forward-messages"""
+        data = {"phone": phone, "messageIds": message_ids, "isGroup": is_group}
+        return self.send_rest_request("forward-messages", data=data)
 
-        Parameters:
-        - instance_id (str): Instance ID.
-        - api_key (str): API authentication key.
-        - api_url (str): API base URL.
-        - webhook (str): Webhook URL to register.
-        - wait_qr_code (bool): Whether to wait for QR code scanning.
-
-        Returns:
-        - dict: Response from the API.
-        """
-        url = f"{api_url}/api/{instance_id}/start-session"
-        headers = {
-            "accept": "*/*",
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {"webhook": webhook, "waitQrCode": wait_qr_code}
-
-        try:
-            response = requests.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
-    @staticmethod
-    def stop_instance(instance_id: str, api_key: str, api_url: str) -> dict:
-        """
-        Stops a WPPConnect instance.
-
-        Parameters:
-        - instance_id (str): Instance ID.
-        - api_key (str): API authentication key.
-        - api_url (str): API base URL.
-
-        Returns:
-        - dict: Response from the API.
-        """
-
-        url = f"{api_url}/api/{instance_id}/close-session"
-        headers = {
-            "accept": "*/*",
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            response = requests.post(url, headers=headers, json={})
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
-    @staticmethod
-    def create_instance(api_url: str, instance_id: str, api_key: str) -> dict:
-        """
-        Creates a new instance by generating a token.
-
-        Parameters:
-        - api_url (str): API base URL.
-        - instance_id (str): ID of the instance to be created.
-        - api_key (str): API authentication key.
-
-        Returns:
-        - dict: Response from the API with the generated token or an error message.
-        """
-
-        url = f"{api_url}/api/{instance_id}/{api_key}/generate-token"
-
-        headers = {
-            "accept": "*/*",
-        }
-        payload = ""
-
-        try:
-            response = requests.post(url, headers=headers, data=payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
-    @staticmethod
-    def get_qrcode(api_url: str, api_key: str, instance_id: str) -> dict:
-        """
-        Retrieves a QR code for a given instance ID.
-
-        Parameters:
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - instance_id (str): ID of the instance.
-
-        Returns:
-        - dict: Response containing the QR code as a Base64-encoded string, or an error message if the request failed.
-        """
-        url = f"{api_url}/api/{instance_id}/qrcode-session"
-        headers = {"accept": "*/*", "Authorization": f"Bearer {api_key}"}
-
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-
-            # If the response contains raw binary data (e.g., PNG), encode it as Base64
-            return {"qrcode": base64.b64encode(response.content).decode("ascii")}
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
-    @staticmethod
-    def logout(api_url: str, api_key: str, instance_id: str) -> bool:
-        """
-        Logs out of the WPPConnect instance.
-
-        Parameters:
-        - api_url (str): API base URL.
-        - api_key (str): API authentication key.
-        - instance_id (str): ID of the instance to logout from.
-
-        Returns:
-        - bool: Whether the logout was successful.
-        """
-        url = f"{api_url}/api/{instance_id}/logout-session"
-        headers = {"accept": "*/*", "Authorization": f"Bearer {api_key}"}
-        response = requests.post(url, headers=headers)
-
-        if response.json()["status"] == "Disconnected":
-            return True
-
-        return False
-
-    @staticmethod
-    def register_wppconnect_action(
-        api_url: str,
-        instance_id: str,
-        api_key: str,
-        master_key: str,
-        webhook: str = "",
-        wait_qr_code: bool = False,
-        max_attempts: int = 10,
+    def delete_message(
+        self,
+        phone: str,
+        message_id: str,
+        is_group: bool = False,
+        only_local: bool = False,
+        delete_media_in_device: bool = False,
     ) -> dict:
-        """
-        Registers a WPPConnect action.
-
-        This function will create a new WPPConnect instance, start it, and register a webhook.
-        If the instance is already created, it will start the instance and update the webhook.
-        If the instance is connected, it will stop the instance, update the webhook, and start it again.
-
-        Parameters:
-        - api_url (str): API base URL.
-        - instance_id (str): ID of the instance to create or update.
-        - api_key (str): API authentication key.
-        - master_key (str): Master key to use to create the instance.
-        - webhook (str): Webhook URL to register.
-        - wait_qr_code (bool): Whether to wait until the QR code is ready.
-        - max_attempts (int): Maximum number of attempts to try to register the action.
-
-        Returns:
-        - dict: Response containing the QR code, API key, instance ID, status, and version.
-        """
-
-        attempts = 0
-        create_result = {}
-        qr_code = ""
-        version = ""
-        status = ""
-
-        can_break = False
-
-        while attempts < max_attempts and not can_break:
-            attempts += 1
-            status_result = WppconnectAPI.get_status(instance_id, api_key, api_url)
-            status = status_result.get("status", "Unknown")
-            error = status_result.get("error", "")
-            version = status_result.get("version", "Unknown")
-
-            if "401 Client Error: Unauthorized for url" in error:
-                create_result = WppconnectAPI.create_instance(
-                    api_url, instance_id, master_key
-                )
-                api_key = create_result.get("token", "")
-                status = "CREATED"
-            elif status == "CLOSED":
-                WppconnectAPI.start_instance(
-                    instance_id, api_key, api_url, webhook, wait_qr_code
-                )
-                status = "STARTING"
-            elif status == "CONNECTED":
-                WppconnectAPI.stop_instance(instance_id, api_key, api_url)
-                WppconnectAPI.start_instance(
-                    instance_id, api_key, api_url, webhook, wait_qr_code
-                )
-                status = "UPDATING WEBHOOK"
-                can_break = True
-            elif status_result.get("qrcode"):
-                qr_code_result = WppconnectAPI.get_qrcode(api_url, api_key, instance_id)
-                qr_code = qr_code_result["qrcode"]
-                can_break = True
-                status = "QRCODE"
-            else:
-                status = "CONNECTING"
-
-            WppconnectAPI.logger.warning(f"WPP STATUS: {status}")
-            time.sleep(5)  # Wait before retrying to avoid excessive API calls
-
-        return {
-            "qr_code": qr_code,
-            "api_key": api_key,
-            "instance_id": instance_id,
-            "status": status,
-            "version": version,
+        """POST /delete-message"""
+        data = {
+            "phone": phone,
+            "messageId": message_id,
+            "isGroup": is_group,
+            "onlyLocal": only_local,
+            "deleteMediaInDevice": delete_media_in_device,
         }
+        return self.send_rest_request("delete-message", data=data)
+
+    # Profile
+
+    def change_username(self, name: str) -> dict:
+        """POST /change-username"""
+        data = {"name": name}
+        return self.send_rest_request("change-username", data=data)
+
+    def set_profile_status(self, status: str) -> dict:
+        """POST /profile-status"""
+        data = {"status": status}
+        return self.send_rest_request("profile-status", data=data)
+
+    def set_profile_pic(self, file_path: str) -> dict:
+        """POST /set-profile-pic"""
+        with open(file_path, "rb") as image_file:
+            file_data = image_file.read()
+        url = f"{self.api_url}/{self.session}/set-profile-pic"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+        }
+        files = {"file": file_data}
+        response = requests.post(url, files=files, headers=headers)
+        return response.json()
+
+    # Catalog & Business
+
+    def add_product(self, product_data: Dict[str, str]) -> dict:
+        """POST /add-product"""
+        return self.send_rest_request("add-product", data=product_data)
+
+    def edit_product(self, product_id: str, options: dict) -> dict:
+        """POST /edit-product"""
+        data = {"id": product_id, "options": options}
+        return self.send_rest_request("edit-product", data=data)
+
+    def delete_product(self, product_id: str) -> dict:
+        """POST /del-products"""
+        data = {"id": product_id}
+        return self.send_rest_request("del-products", data=data)
+
+    def change_product_image(self, product_id: str, base64_image: str) -> dict:
+        """POST /change-product-image"""
+        data = {"id": product_id, "base64": base64_image}
+        return self.send_rest_request("change-product-image", data=data)
+
+    def get_products(
+        self, phone: Optional[str] = None, qnt: Optional[int] = None
+    ) -> dict:
+        """GET /get-products"""
+        params = {"phone": phone, "qnt": qnt} if phone or qnt else None
+        return self.send_rest_request("get-products", method="GET", params=params)
+
+    # Misc
+
+    def health_check(self) -> dict:
+        """GET /healthz"""
+        return self.send_rest_request("/healthz", method="GET")
+
+    def get_metrics(self) -> dict:
+        """GET /metrics"""
+        return self.send_rest_request("/metrics", method="GET")

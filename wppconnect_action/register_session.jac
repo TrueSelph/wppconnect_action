@@ -1,13 +1,13 @@
 import:py logging;
 import:py from logging { Logger }
+import:jac from jivas.agent.core.agent { Agent }
 import:jac from jivas.agent.action.action { Action }
 import:jac from jivas.agent.action.actions { Actions }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
-import:jac from jivas.agent.core.agent { Agent }
 
-walker logout_wppconnect :interact_graph_walker: {
+walker register_session :interact_graph_walker: {
 
-    has response:bool = False;
+    has response:dict = {};
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -22,11 +22,11 @@ walker logout_wppconnect :interact_graph_walker: {
     }
 
     can on_actions with Actions entry {
-        visit [-->](`?Action)(?enabled==True)(?label=='WppconnectAction');
+        visit [-->](`?Action)(?enabled==True)(?label=='WPPConnectAction');
     }
 
     can on_action with Action entry {
-        self.response = here.logout_wppconnect();
+        self.response = here.register_session();
     }
 
 }

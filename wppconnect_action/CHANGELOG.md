@@ -6,3 +6,6 @@
 
 ### 0.0.3
 - Enforce ENV VARS in action registration
+
+### 0.0.4
+- Major Refactor of WPPConnectAPI, WPPConnectAction and action app.

@@ -12,7 +12,7 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
 
 - **Name:** `jivas/wppconnect_action`
 - **Author:** [V75 Inc.](https://v75inc.com/)
-- **Architype:** `WppconnectAction`
+- **Architype:** `WPPConnectAction`
 
 ## Meta Information
 

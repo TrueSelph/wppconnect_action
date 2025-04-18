@@ -3,28 +3,27 @@ import:py logging;
 import:py traceback;
 import:py from logging { Logger }
 import:py from jivas.agent.modules.agentlib.utils { Utils }
-import:py from .modules.wppconnect_api { WppconnectAPI }
+import:py from .modules.wppconnect_api { WPPConnectAPI }
 import:py from jvserve.lib.agent_interface { AgentInterface }
 import:jac from jivas.agent.action.action { Action }
 import:jac from jivas.agent.memory.interaction_response { MessageType }
 
-node WppconnectAction :Action: {
+node WPPConnectAction :Action: {
     # houses configurations per agent for whatsapp api communications provided by wppconnect api
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
 
-    has master_key:str = ""; # WPPConnect Server Secret Key
-    has base_url:str = ""; # Jivas Base URL
-    has api_key:str = ""; # WPPConnect Server API Key for this session
     has api_url:str = ""; # WPPConnect Server URL
-    has instance_id:str = ""; # WPPConnect Server Instance ID
-    has webhook_url:str = "";
-    has webhook_properties:dict = {};
-    has chunk_length:int = 1024;
+    has secret_key:str = ""; # WPPConnect Server Secret Key
+    has token:str = ""; # WPPConnect Server API Key for this session
+    has session:str = ""; # WPPConnect Server Instance ID
+    has base_url:str = ""; # Jivas Base URL
+    has webhook_url:str = ""; # JIVAS webhook for WPPConnect
+    has chunk_length:int = 1024; # max length of message to send
     # when set, the wa push name value is used as the user name
-    has use_pushname:bool = True;
-    has ignore_newsletters:bool = True;
+    has use_pushname:bool = True; # use the WhatsApp push name as the user name
+    has ignore_newsletters:bool = True; # ignore newsletters
 
 
     can on_enable(){
@@ -34,76 +33,95 @@ node WppconnectAction :Action: {
         }
     }
 
-    can on_register() -> dict{
-        try {
-            # set credentials
-            if(not self.instance_id) {
-                agent_name = self.get_agent().name;
-                agent_name = agent_name.replace(" ", "_");
-                agent_name = agent_name.replace("-", "_");
-                self.instance_id = agent_name;
-            }
+    can api() -> WPPConnectAPI {
+        # load the api instance
 
-            if (not self.base_url) {
-                self.base_url = f"{os.environ.get('JIVAS_BASE_URL','')}";
-                if not self.base_url {
-                    self.logger.error('JIVAS_BASE_URL is not set');
-                    return {};
-                }
-            }
+        return WPPConnectAPI(
+            api_url=self.api_url,
+            session=self.session,
+            token=self.token,
+            secret_key=self.secret_key
+        );
 
-            if (not self.master_key) {
-                self.master_key = f"{os.environ.get('WPP_MASTER_KEY','')}";
-                if not self.master_key {
-                    self.logger.error('WPP_MASTER_KEY is not set');
-                    return {};
-                }
-            }
+    }
 
-            if(not self.api_url) {
-                self.api_url = f"{os.environ.get('WPP_API_URL','')}";
-                if not self.api_url {
-                    self.logger.error('WPP_API_URL is not set');
-                    return {};
-                }
-            }
+    can on_register {
 
-            # register webhook is enabled
-            if(self.enabled) {
-                success = True;
-
-                agent_id = self.get_agent().id;
-                module_root = self.get_module_root();
-                # generate webhook key
-                webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
-
-                if(self.base_url and self.api_url and webhook_key) {
-                    self.logger.warning(f"{self.label}: Registering Webhook");
-                    # complete the full webhook url
-                    self.webhook_url = f'{self.base_url}/webhook/{webhook_key}';
-                    result = WppconnectAPI.register_wppconnect_action(self.api_url, self.instance_id, self.api_key, self.master_key, self.webhook_url, wait_qr_code=False);
-                    self.instance_id = result["instance_id"];
-                    self.api_key = result["api_key"];
-                    return result;
-                } else {
-                    self.logger.error('unable to generate webhook url for wppconnect, missing required parameters');
-                }
-            }
-        } except Exception as e {
-            self.logger.error(f"An exception occurred in {self.label}:\n{traceback.format_exc()}\n");
+        if (not self.api_url) {
+            # set secret_key for wpp in environment
+            self.api_url = os.environ.get('WPP_API_URL', 'http://localhost:21465/api');
         }
-        return {};
+
+        if (not self.base_url) {
+            # default to jivas base url in environment
+            self.base_url = os.environ.get('JIVAS_BASE_URL');
+        }
+
+        if (not self.secret_key) {
+            # set secret_key for wpp in environment
+            self.secret_key = os.environ.get('WPP_SECRET_KEY', 'THISISMYSECURETOKEN');
+        }
+
+        if(not self.session) {
+            agent_name = self.get_agent().name;
+            agent_name = agent_name.replace(" ", "_");
+            agent_name = agent_name.replace("-", "_");
+            self.session = agent_name;
+        }
+
+        if(self.enabled) {
+            if(result := self.register_session()) {
+                self.enabled = True;
+            } else {
+                self.enabled = False;
+            }
+        }
+    }
+
+    can register_session() -> dict {
+        # setup procedure for webhook registration on api
+
+        result = {};
+
+        agent_id = self.get_agent().id;
+        module_root = self.get_module_root();
+        # generate webhook key
+        webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
+
+        if(self.base_url and self.api_url and webhook_key) {
+            # complete the full webhook url
+            self.webhook_url = f'{self.base_url}/webhook/{webhook_key}';
+            self.logger.debug(f'wppconnect webhook url: {self.webhook_url}');
+
+            result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True);
+
+            if result is not None and result.get('status') != 'ERROR' {
+                # check if the response contains a valid token
+                if result.get('token') {
+                    self.token = result.get('token');
+                    # remove the token from the payload now that we've saved it
+                    del result['token'];
+                } else {
+                    self.logger.error('WPPConnect token not found');
+                    result = {};
+                }
+            }
+
+        } else {
+            self.logger.error('unable to generate webhook url for WPPConnect, missing required parameters');
+        }
+
+        return result;
     }
 
     can healthcheck() -> bool {
         try {
             if(
                 self.base_url and
-                self.api_key and
+                self.token and
                 self.api_url and
-                self.instance_id and
-                self.webhook_url and
-                self.chunk_length > 1000
+                self.session and
+                self.webhook_url
             ){
                 return True;
             }
@@ -112,11 +130,6 @@ node WppconnectAction :Action: {
             self.logger.error(f"An exception occurred in {self.label}:\n{traceback.format_exc()}\n");
             return False;
         }
-    }
-
-
-    can logout_wppconnect() -> bool {
-        return WppconnectAPI.logout(self.api_url, self.api_key, self.instance_id);
     }
 
     can sanitize_message(message:str) {
@@ -137,40 +150,34 @@ node WppconnectAction :Action: {
                 outgoing = Utils.chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
 
                 for chunk in outgoing {
-                    WppconnectAPI.send_text_message(phone_number=session_id, message=chunk, api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, is_group=is_group, msg_id=parent_message_id);
+                    self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
                 }
+
+
             } elif(message.get_type() == MessageType.MEDIA.value) {
                 mime_type = Utils.get_mime_type(mime_type=message.mime);
-                if(mime_type['file_type'] == "document") {
-                    content = self.sanitize_message(message = message.get_content());
-                    WppconnectAPI.send_media(phone_number= session_id, media_url=message.data.get('url'), api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, file_name=message.data.get('file_name'), caption = content);
-                }elif(mime_type['file_type'] == "image") {
-                    content = self.sanitize_message(message = message.get_content());
-                    WppconnectAPI.send_media(phone_number=session_id, media_url= message.data.get('url'), api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, caption = content);
-                }elif(mime_type['file_type'] == "video") {
-                    content = self.sanitize_message(message = message.get_content());
-                    WppconnectAPI.send_media(phone_number=session_id, media_url= message.data.get('url'), api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, caption = content);
+                content = self.sanitize_message(message = message.get_content());
+                if(mime_type['file_type'] in ["document", "video"]) {
+                    self.api().send_file(phone_number= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content);
+                } elif(mime_type['file_type'] == "image") {
+                    self.api().send_image(phone_number=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content);
                 }
             } elif(message.get_type() == MessageType.MULTI.value) {
                 for message_item in message.get_content_items() {
                     if(message_item.get_type() == MessageType.TEXT.value) {
                         content = self.sanitize_message(message = message_item.get_content());
                         outgoing = Utils.chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
-
                         for chunk in outgoing {
-                            WppconnectAPI.send_text_message(phone_number=session_id, message=chunk, api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, is_group=is_group, msg_id=parent_message_id);
+                            self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
                         }
                     } elif(message_item.get_type() == MessageType.MEDIA.value) {
                         mime_type = Utils.get_mime_type(mime_type=message_item.mime);
                         content = self.sanitize_message(message = message_item.get_content());
-                        if(mime_type['file_type'] == "document") {
-                            WppconnectAPI.send_media(phone_number= session_id, media_url=message_item.data.get('url'), api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, file_name=message_item.data.get('file_name'), caption = content);
-                        } elif(mime_type['file_type'] == "image") {
-                            WppconnectAPI.send_media(phone_number=session_id, media_url= message_item.data.get('url'), api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, caption = content);
-                        } elif(mime_type['file_type'] == "video") {
-                            WppconnectAPI.send_media(phone_number=session_id, media_url= message_item.data.get('url'), api_url=self.api_url, api_key=self.api_key, session_id=self.instance_id, caption = content);
+                        if(mime_type['file_type'] in ["document", "video"]) {
+                            self.api().send_file(phone_number= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
+                        }elif(mime_type['file_type'] == "image") {
+                            self.api().send_image(phone_number=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
                         }
-
                     }
                 }
             }
