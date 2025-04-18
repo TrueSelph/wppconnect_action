@@ -1,6 +1,7 @@
 import:py logging;
 import:py os;
 import:py uuid;
+import:py base64;
 import:py mimetypes;
 import:py from logging { Logger }
 import:py from jivas.agent.modules.agentlib.utils { Utils }
@@ -44,7 +45,7 @@ walker wppconnect_interact :interact_graph_walker: {
         if(access_control_action_node := here.get_actions().get(action_label='AccessControlAction')) {
 
             access = access_control_action_node.has_action_access(
-                session_id=data['sender_number'],
+                session_id=data['sender'],
                 action_label='WPPConnectAction',
                 channel='whatsapp'
             );
@@ -56,7 +57,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
 
         # ignore loopback messages i.e. messages where sender and receiver are the same
-        if(data['sender_number'] == data['agent_number']) {
+        if(data['sender'] == data['receiver']) {
             disengage;
         }
 
@@ -66,7 +67,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 disengage;
             }
 
-            if(action_node.ignore_newsletters and "@newsletter" in data["sender_number"]) {
+            if(action_node.ignore_newsletters and "@newsletter" in data["sender"]) {
                 Jac.get_context().status = 200;
                 disengage;
             }
@@ -75,7 +76,7 @@ walker wppconnect_interact :interact_graph_walker: {
             if(data['fromMe']) {
                 # if this is a human sending a message via AI's whatsapp, handle it differently here
                 if((data['event_type'] == "onack") and data["author"]) {
-                    frame_node = here.get_memory().get_frame(agent_id = here.id, session_id = data["agent_number"], force_session=True);
+                    frame_node = here.get_memory().get_frame(agent_id = here.id, session_id = data["receiver"], force_session=True);
                     frame_node.add_unprompted_interaction(agent_id=here.id, message = data["body"], channel = "whatsapp");
                 }
                 disengage;
@@ -83,7 +84,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             # init the frame here so we can have it all set up to add the sender info from data
             # we have to force session to get frame to use the session_id we supply, so we can track whatsapp user by number
-            frame_node = here.get_memory().get_frame(agent_id = here.id, session_id = data["sender_number"], force_session=True);
+            frame_node = here.get_memory().get_frame(agent_id = here.id, session_id = data["sender"], force_session=True);
 
             if(action_node.use_pushname) {
                 # grab and save the sender name in a frame variable
@@ -138,7 +139,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
         if(data['author']) {
             # this means we are in a group..only respond if the message starts with @[agent name]
-            callout = ( ("@"+data['agent_number']).replace("@c.us", "") ).lower();
+            callout = ( ("@"+data['receiver']).replace("@c.us", "") ).lower();
             callout_index = ((data['body']).lower()).find(callout);
             if( callout_index == -1 ) {
                 # then we ignore unless they are directly calling us out in the group...

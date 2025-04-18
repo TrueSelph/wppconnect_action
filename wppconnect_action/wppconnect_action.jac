@@ -87,7 +87,7 @@ node WPPConnectAction :Action: {
         module_root = self.get_module_root();
         # generate webhook key
         webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
-
+        
         if(self.base_url and self.api_url and webhook_key) {
             # complete the full webhook url
             self.webhook_url = f'{self.base_url}/webhook/{webhook_key}';
