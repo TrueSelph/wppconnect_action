@@ -32,6 +32,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         st.session_state[session_payload_key] = result
 
     def logout_wppconnect() -> None:
+        call_action_walker_exec(agent_id, module_root, "logout_session", {})
+        st.session_state.pop(session_payload_key, None)
+        # Optionally store a notification or feedback flag
+
+    def close_wppconnect() -> None:
         call_action_walker_exec(agent_id, module_root, "close_session", {})
         st.session_state.pop(session_payload_key, None)
         # Optionally store a notification or feedback flag
@@ -57,14 +62,45 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     unsafe_allow_html=True,
                 )
 
-                if st.button(
-                    "Logout", key="logout_btn", help="Disconnect this WhatsApp session"
-                ):
-                    with st.spinner("Logging out..."):
-                        logout_wppconnect()
-                        get_wppconnect_status()
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                with col1:
+                    if st.button(
+                        "Logout",
+                        key="connected_logout_btn",
+                        help="Disconnect this WhatsApp session",
+                    ):
+                        with st.spinner("Logging out..."):
+                            logout_wppconnect()
+                            result = st.session_state.get(session_payload_key, {})
+                with col2:
+                    if st.button("Close", key="connected_close_session_btn"):
+                        with st.spinner("Closing session..."):
+                            close_wppconnect()
+                            get_wppconnect_status()
+                            result = st.session_state.get(session_payload_key, {})
 
                 st.markdown("</div>", unsafe_allow_html=True)
+
+            elif result.get("status") == "INITIALIZING":
+                # Status is INITIALIZING and qrcode is not ready
+                st.warning(
+                    "Session is initializing. Please wait a moment. Click 'Refresh' to update status. If too much time elapses, click 'Close Session' to start again",
+                    icon="ℹ️",
+                )
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                with col1:
+                    if st.button("Refresh", key="init_refresh_session_btn"):
+                        with st.spinner("Refreshing session..."):
+                            get_wppconnect_status()
+                            result = st.session_state.get(session_payload_key, {})
+                with col2:
+                    if st.button("Close", key="init_close_session_btn"):
+                        with st.spinner("Closing session..."):
+                            close_wppconnect()
+                            get_wppconnect_status()
+                            result = st.session_state.get(session_payload_key, {})
 
             else:
                 qrcode = result.get("qrcode", "")
@@ -76,10 +112,12 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     )
                     st.markdown("<br>", unsafe_allow_html=True)
 
-                    if st.button("Start Session", key="start_session_btn"):
-                        with st.spinner("Starting session..."):
-                            get_wppconnect_status()
-                            result = st.session_state.get(session_payload_key, {})
+                    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                    with col1:
+                        if st.button("Start", key="not_qr_start_session_btn"):
+                            with st.spinner("Starting session..."):
+                                get_wppconnect_status()
+                                result = st.session_state.get(session_payload_key, {})
 
                 else:
                     # qrcode exists: show QR image and refresh
@@ -105,10 +143,15 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                             f"There was an error rendering the QR code., {str(ex)}"
                         )
 
-                    col1, col2, col3 = st.columns([4, 2, 4])
+                    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
                     with col1:
                         if st.button("Refresh", key="refresh_qr_btn"):
                             with st.spinner("Refreshing QR code..."):
                                 get_wppconnect_status()
                                 result = st.session_state.get(session_payload_key, {})
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    with col2:
+                        if st.button("Close", key="qr_close_session_btn"):
+                            with st.spinner("Closing session..."):
+                                close_wppconnect()
+                                get_wppconnect_status()
+                                result = st.session_state.get(session_payload_key, {})

@@ -87,7 +87,7 @@ node WPPConnectAction :Action: {
         module_root = self.get_module_root();
         # generate webhook key
         webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
-        
+
         if(self.base_url and self.api_url and webhook_key) {
             # complete the full webhook url
             self.webhook_url = f'{self.base_url}/webhook/{webhook_key}';
@@ -101,9 +101,6 @@ node WPPConnectAction :Action: {
                     self.token = result.get('token');
                     # remove the token from the payload now that we've saved it
                     del result['token'];
-                } else {
-                    self.logger.error('WPPConnect token not found');
-                    result = {};
                 }
             }
 
@@ -112,6 +109,11 @@ node WPPConnectAction :Action: {
         }
 
         return result;
+    }
+
+    can logout_session() {
+        self.api().logout_session();
+        return True;
     }
 
     can healthcheck() -> bool {

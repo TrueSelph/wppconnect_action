@@ -250,9 +250,9 @@ class WPPConnectAPI:
         """POST /close-session"""
         return self.send_rest_request("close-session")
 
-    def logout_session(self) -> dict:
+    def logout_session(self) -> None:
         """POST /logout-session"""
-        return self.send_rest_request("logout-session")
+        self.send_rest_request("logout-session")
 
     def qrcode(self) -> dict:
         """GET /qrcode-session (base64 encoded image returned)"""

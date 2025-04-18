@@ -7,7 +7,7 @@ import:jac from jivas.agent.core.agent { Agent }
 
 walker logout_session :interact_graph_walker: {
 
-    has response:dict = {};
+    has response:bool = False;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -26,7 +26,7 @@ walker logout_session :interact_graph_walker: {
     }
 
     can on_action with Action entry {
-        self.response = here.api().logout_session();
+        self.response = here.logout_session();
     }
 
 }
