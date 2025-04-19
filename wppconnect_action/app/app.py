@@ -1,26 +1,14 @@
 """This module contains the Streamlit app for the WhatsApp Connect action."""
 
-import base64
-from io import BytesIO
-
 import streamlit as st
 from jvcli.client.lib.utils import call_action_walker_exec
 from jvcli.client.lib.widgets import app_controls, app_header, app_update_action
-from PIL import Image
 from streamlit_router import StreamlitRouter
 
 
 def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -> None:
     """
     Render the Streamlit app for the WhatsApp Connect action.
-
-    This app consists of the following components:
-
-    1. Header controls (via app_header)
-    2. Main controls (via app_controls)
-    3. Webhook registration (via register_wppconnect_webhook)
-    4. Webhook logout (via logout_wppconnect)
-    5. Update button to apply changes (via app_update_action)
 
     :param router: The Streamlit Router object.
     :param agent_id: The ID of the agent.
@@ -29,69 +17,141 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     """
     (model_key, module_root) = app_header(agent_id, action_id, info)
 
-    # Add main app controls
-    app_controls(agent_id, action_id)
+    with st.expander("WPPConnect Configuration", expanded=False):
+        # Add main app controls
+        app_controls(agent_id, action_id)
+        # Add update button to apply changes
+        app_update_action(agent_id, action_id)
 
-    with st.expander("Register Webhook", expanded=True):
-        st.markdown("### Webhook Registration")
-        st.markdown(
-            "Click the button below to register the webhook. "
-            "This enables your agent to communicate with WhatsApp."
-        )
+    # Unique keys in session state for button control and data
+    session_payload_key = "wppconnect_payload"
 
-        # Create two columns for the buttons
-        col1, col2 = st.columns(2)
+    def get_wppconnect_status() -> None:
+        """Call and store the latest status in session state."""
+        result = call_action_walker_exec(agent_id, module_root, "register_session", {})
+        st.session_state[session_payload_key] = result
 
-        with col1:
-            if st.button("Register Webhook", key=f"{model_key}_btn_register_webhook"):
-                with st.spinner("Registering webhook..."):
-                    result = call_action_walker_exec(
-                        agent_id, module_root, "register_wppconnect_webhook", {}
+    def logout_wppconnect() -> None:
+        call_action_walker_exec(agent_id, module_root, "logout_session", {})
+        st.session_state.pop(session_payload_key, None)
+        # Optionally store a notification or feedback flag
+
+    def close_wppconnect() -> None:
+        call_action_walker_exec(agent_id, module_root, "close_session", {})
+        st.session_state.pop(session_payload_key, None)
+        # Optionally store a notification or feedback flag
+
+    # Ensure we have payload on first view
+    if session_payload_key not in st.session_state:
+        get_wppconnect_status()
+
+    result = st.session_state.get(session_payload_key, {})
+
+    with st.expander("WPPConnect Session Registration", expanded=True):
+
+        if result != []:
+            # Main logic block follows your requirements
+            if result.get("status") == "CONNECTED":
+                # Step 2: Show connected + message + Logout button
+                st.success(result.get("message", "Session is connected!"), icon="✅")
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Center the Logout button
+                st.markdown(
+                    '<div style="display:flex; justify-content:center;">',
+                    unsafe_allow_html=True,
+                )
+
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                with col1:
+                    if st.button(
+                        "Logout",
+                        key="connected_logout_btn",
+                        help="Disconnect this WhatsApp session",
+                    ):
+                        with st.spinner("Logging out..."):
+                            logout_wppconnect()
+                            result = st.session_state.get(session_payload_key, {})
+                with col2:
+                    if st.button("Close", key="connected_close_session_btn"):
+                        with st.spinner("Closing session..."):
+                            close_wppconnect()
+                            get_wppconnect_status()
+                            result = st.session_state.get(session_payload_key, {})
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            elif result.get("status") == "INITIALIZING":
+                # Status is INITIALIZING and qrcode is not ready
+                st.warning(
+                    "Session is initializing. Please wait a moment. Click 'Refresh' to update status. If too much time elapses, click 'Close Session' to start again",
+                    icon="ℹ️",
+                )
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                with col1:
+                    if st.button("Refresh", key="init_refresh_session_btn"):
+                        with st.spinner("Refreshing session..."):
+                            get_wppconnect_status()
+                            result = st.session_state.get(session_payload_key, {})
+                with col2:
+                    if st.button("Close", key="init_close_session_btn"):
+                        with st.spinner("Closing session..."):
+                            close_wppconnect()
+                            get_wppconnect_status()
+                            result = st.session_state.get(session_payload_key, {})
+
+            else:
+                qrcode = result.get("qrcode", "")
+                if not qrcode:
+                    # Status is not CONNECTED and qrcode is missing or empty
+                    st.info(
+                        "Session is not connected. Start a new session to get the QR Code.",
+                        icon="ℹ️",
                     )
+                    st.markdown("<br>", unsafe_allow_html=True)
 
-                if result["status"] == "QRCODE":
-                    st.success("Please scan the QR code to connect")
+                    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                    with col1:
+                        if st.button("Start", key="not_qr_start_session_btn"):
+                            with st.spinner("Starting session..."):
+                                get_wppconnect_status()
+                                result = st.session_state.get(session_payload_key, {})
+
+                else:
+                    # qrcode exists: show QR image and refresh
+                    st.info(
+                        result.get(
+                            "message",
+                            "Scan the QR code to connect your WhatsApp account.",
+                        ),
+                        icon="ℹ️",
+                    )
                     try:
-                        # Decode the Base64-encoded QR code
-                        qr_code_bytes = BytesIO(base64.b64decode(result["qr_code"]))
-                        qr_code_image = Image.open(qr_code_bytes)
-
-                        # Store QR code image in session state
-                        st.session_state["qr_code_image"] = qr_code_image
-
                         # Display the QR code centered
                         st.markdown(
                             f"""
                             <div style="display: flex; justify-content: center;">
-                                <img src="data:image/png;base64,{result['qr_code']}" width="500">
+                                <img src="{qrcode}" width="500">
                             </div>
                             """,
                             unsafe_allow_html=True,
                         )
+                    except Exception as ex:
+                        st.error(
+                            f"There was an error rendering the QR code., {str(ex)}"
+                        )
 
-                        # Add success state
-                        st.session_state["qr_code_success"] = True
-                    except Exception as e:
-                        st.error(f"Failed to process QR code image: {str(e)}")
-                        st.error(f"{result}")
-                        st.session_state["qr_code_success"] = False
-
-                elif result:
-                    st.success("Webhook registered successfully!")
-                else:
-                    st.error("Failed to register webhook. Please try again.")
-
-        with col2:
-            if st.button("Logout Webhook", key=f"{model_key}_btn_logout_webhook"):
-                with st.spinner("Logging out..."):
-                    logout_result = call_action_walker_exec(
-                        agent_id, module_root, "logout_wppconnect", {}
-                    )
-
-                if logout_result == []:
-                    st.success("Logged out successfully!")
-                else:
-                    st.error("Failed to log out. Please try again.")
-
-    # Add update button to apply changes
-    app_update_action(agent_id, action_id)
+                    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                    with col1:
+                        if st.button("Refresh", key="refresh_qr_btn"):
+                            with st.spinner("Refreshing QR code..."):
+                                get_wppconnect_status()
+                                result = st.session_state.get(session_payload_key, {})
+                    with col2:
+                        if st.button("Close", key="qr_close_session_btn"):
+                            with st.spinner("Closing session..."):
+                                close_wppconnect()
+                                get_wppconnect_status()
+                                result = st.session_state.get(session_payload_key, {})

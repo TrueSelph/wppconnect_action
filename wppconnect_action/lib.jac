@@ -1,4 +1,8 @@
 include:jac wppconnect_action;
 include:jac wppconnect_interact;
-include:jac register_wppconnect_webhook;
-include:jac logout_wppconnect;
+include:jac register_session;
+include:jac close_session;
+include:jac logout_session;
+include:jac show_all_sessions;
+include:jac get_qrcode;
+include:jac get_session_status;
