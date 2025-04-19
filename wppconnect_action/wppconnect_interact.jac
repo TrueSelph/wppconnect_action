@@ -36,6 +36,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
         # parse data if we've gotten this far..
         data = WPPConnectAPI.parse_inbound_message(request = self.params);
+
         if(not data) {
             Jac.get_context().status = 200;
             disengage;
@@ -62,6 +63,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
 
         if( action_node := (here.get_actions().get(action_label='WPPConnectAction')) ) {
+
             if(not action_node.enabled) {
                 Jac.get_context().status = 200;
                 disengage;
@@ -72,13 +74,14 @@ walker wppconnect_interact :interact_graph_walker: {
                 disengage;
             }
 
-            # let's handle onack types here...
             if(data['fromMe']) {
                 # if this is a human sending a message via AI's whatsapp, handle it differently here
                 if((data['event_type'] == "onack") and data["author"]) {
                     frame_node = here.get_memory().get_frame(agent_id = here.id, session_id = data["receiver"], force_session=True);
-                    frame_node.add_unprompted_interaction(agent_id=here.id, message = data["body"], channel = "whatsapp");
+                    self.logger.debug('inserting human message into AI context');
+                    frame_node.add_unprompted_interaction(message = data["body"], channel = "whatsapp");
                 }
+                # we disregard any other fromMe requests
                 disengage;
             }
 
@@ -155,8 +158,12 @@ walker wppconnect_interact :interact_graph_walker: {
     }
 
     can handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+
         if(self.is_directed_message(data)) {
             # only respond if we have a message and if we are messaged with @ in groups
+
+            # at this point we validated that it warrants a response, let's issue the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
 
             message = (root spawn interact(
                 utterance = data['body'],
@@ -165,16 +172,19 @@ walker wppconnect_interact :interact_graph_walker: {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = {"label": "whatsapp_chat", "data_type": "dict", "content": data}
+                data = [{"label": "whatsapp_chat", "meta": {}, "content": data}]
             )).message;
 
-            # handle reply
+            # handle replies
             parent_message_id = "";
             if(data.get("parent_message")){
                 parent_message_id = data.get("message_id");
             }
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
+
+            # let's diable the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
     }
 
@@ -183,8 +193,12 @@ walker wppconnect_interact :interact_graph_walker: {
 
         if(not data['author']) { # sidestep voicenotes in group chats
 
+            # at this point we validated that it warrants a response, let's issue the status
+            action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"]);
+
             message = None;
             transcription = None;
+            interact_object = None;
 
             # load stt action
             if(stt_action := agent_node.get_stt_action()) {
@@ -196,7 +210,7 @@ walker wppconnect_interact :interact_graph_walker: {
             }
 
             if(transcription) {
-                message = (root spawn interact(
+                interact_object = (root spawn interact(
                     utterance = transcription,
                     agent_id = agent_node.id,
                     session_id = frame_node.session_id,
@@ -204,44 +218,48 @@ walker wppconnect_interact :interact_graph_walker: {
                     reporting = False,
                     tts = True,
                     channel = "whatsapp",
-                    data = {"label": "whatsapp_voicenote", "data_type": data['message_type'], "content": data['media']}
-                )).message;
+                    data = [{"label": "whatsapp_voicenote", "meta": {"message_type": data['message_type']}, "content": data['media']}]
+                ));
             }
 
             # now we grab the response and send it
-            if(message) {
+            if(interact_object) {
 
                 # dereference response for convenience
                 has_tts_response = False;
-                parent_message_id = message.get_meta('parent_message_id');
+                parent_message_id = interact_object.message.get_meta('parent_message_id');
 
-                if(tts_action := agent_node.get_tts_action()) {
+                # check for TTS result in interact_object since tts flag was set to True
+                audio_url = interact_object.response.get('response', {}).get('audio_url');
 
-                    # synthesize an audio for the user, cater to phoneme_message, if available
-                    content = message.get_meta('phoneme_content') or message.get_content();
+                if(audio_url) {
+                    audio_base64 = WPPConnectAPI.file_url_to_base64(audio_url);
+                    # sends audio via wppconnect message using url
+                    response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio_base64);
 
-                    # perform TTS
-                    audio = tts_action.invoke(text=content, as_base64=True);
-
-                    if(audio) {
-                        # sends audio via wppconnect message using url
-                        response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio);
+                    if response.get("status") == "success" {
                         has_tts_response = True;
                     }
                 }
 
                 if(not has_tts_response) {
                     # fall back on text reply if no tts response generated
-                    action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
+                    action_node.send_message(session_id=frame_node.session_id, message=interact_object.message, is_group=data["isGroup"], parent_message_id=parent_message_id);
                 }
 
             }
+
+            # let's diable the status
+            action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
     }
 
     can handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(data)) {
+
+            # at this point we validated that it warrants a response, let's issue the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
 
             # decode base64 encoded data into bytes
             file_data = base64.b64decode(data['media']);
@@ -283,6 +301,9 @@ walker wppconnect_interact :interact_graph_walker: {
             }
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
+
+            # let's diable the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
     }
 

@@ -142,7 +142,8 @@ node WPPConnectAction :Action: {
         # processes an agent response payload format and sends an wppconnect message to a specified session_id via the action
 
         if(message and session_id) {
-            if(not parent_message_id){
+
+            if(not parent_message_id) {
                 parent_message_id = message.get_meta('parent_message_id');
             }
 

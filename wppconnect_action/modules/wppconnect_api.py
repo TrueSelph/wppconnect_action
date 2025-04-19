@@ -85,6 +85,7 @@ class WPPConnectAPI:
         payload = {}
 
         try:
+
             valid_events = ["onmessage", "onpollresponse", "onack"]
             event = request.get("event")
             if event not in valid_events:
@@ -100,12 +101,19 @@ class WPPConnectAPI:
                 "caption": request.get("caption", ""),
                 "location": request.get("location", {}),
                 "fromMe": request.get("fromMe", False),
-                "isGroup": False,
+                "isGroup": request.get("isGroupMsg", False),
+                "isForwarded": request.get("isForwarded", False),
+                "sender_name": request.get("notifyName", ""),
             }
 
             # fromMe correction if misplaced
             if isinstance(payload["fromMe"], dict):
                 payload["fromMe"] = payload["fromMe"].get("fromMe", False)
+
+            # message id extraction in the event of weird nested struct
+            if isinstance(payload["message_id"], dict):
+                payload["fromMe"] = payload["message_id"].get("fromMe", False)
+                payload["message_id"] = payload["message_id"].get("id", "")
 
             # quotedMsg/parent message
             if "quotedMsg" in request:
@@ -138,7 +146,6 @@ class WPPConnectAPI:
                 payload["poll_id"] = request.get("msgId", {}).get("_serialized", "")
                 payload["selectedOptions"] = request.get("selectedOptions", "")
 
-            payload["sender_name"] = request.get("notifyName", "")
             return payload
 
         except Exception as e:
@@ -412,7 +419,6 @@ class WPPConnectAPI:
 
     def send_voice(
         self,
-        session: str,
         phone: str,
         file_url: str,
         is_group: bool = False,
@@ -422,7 +428,6 @@ class WPPConnectAPI:
         POST /api/{session}/send-voice
 
         Args:
-            session (str): The session identifier for the API (inserted in path).
             phone (str): Recipient phone number/group id.
             file_url (str): Path to the audio file (voice message).
             is_group (bool): True if the recipient is a group. Defaults to False.
@@ -458,7 +463,6 @@ class WPPConnectAPI:
         POST /api/{session}/send-poll-message
 
         Args:
-            session (str): The session identifier for the API (path param).
             phone (str): The recipient phone number.
             name (str): The poll name/title.
             choices (list): A list of choice strings.
