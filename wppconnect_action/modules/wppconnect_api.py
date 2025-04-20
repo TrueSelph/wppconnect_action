@@ -86,9 +86,8 @@ class WPPConnectAPI:
 
         try:
 
-            valid_events = ["onmessage", "onpollresponse", "onack"]
             event = request.get("event")
-            if event not in valid_events:
+            if event not in ["onmessage", "onpollresponse", "onack"]:
                 return {}
 
             payload = {
@@ -117,7 +116,7 @@ class WPPConnectAPI:
 
             # quotedMsg/parent message
             if "quotedMsg" in request:
-                payload["parent_message"] = request["quotedMsg"]
+                payload["quoted_message"] = request["quotedMsg"]
 
             # Group detection
             if (

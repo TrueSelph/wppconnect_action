@@ -9,3 +9,7 @@
 
 ### 0.0.4
 - Major Refactor of WPPConnectAPI, WPPConnectAction and action app.
+
+### 0.0.5
+- Added behaviour to handle quoted messages as context in replies
+- Updated action app, added refinements to make UI more usable

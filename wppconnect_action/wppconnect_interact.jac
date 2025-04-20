@@ -165,8 +165,20 @@ walker wppconnect_interact :interact_graph_walker: {
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
 
+            # handle when user replies to a specific, previous message
+            # the AI will need to have the quoted message as context along with the current message
+            content = data['body'];
+
+            # handle text-based quoted messages for now
+            if( data.get("quoted_message") and (data.get("quoted_message", {}).get("type") == "chat") ) {
+                quoted_message = data.get("quoted_message").get("body");
+                quoted_message_directive = f"Use the quoted message as context when responding to my reply.  Quoted message: '{quoted_message}' Reply: '{content}'";
+                interaction_node = frame_node.add_interaction(utterance = content, channel = "whatsapp");
+                interaction_node.add_directive(quoted_message_directive);
+            }
+
             message = (root spawn interact(
-                utterance = data['body'],
+                utterance = content,
                 agent_id = agent_node.id,
                 session_id = frame_node.session_id,
                 verbose = False,
@@ -175,15 +187,9 @@ walker wppconnect_interact :interact_graph_walker: {
                 data = [{"label": "whatsapp_chat", "meta": {}, "content": data}]
             )).message;
 
-            # handle replies
-            parent_message_id = "";
-            if(data.get("parent_message")){
-                parent_message_id = data.get("message_id");
-            }
+            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
 
-            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
-
-            # let's diable the typing
+            # let's disable the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
     }
@@ -249,7 +255,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             }
 
-            # let's diable the status
+            # let's disable the status
             action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
     }
@@ -302,7 +308,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
 
-            # let's diable the typing
+            # let's disable the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
     }

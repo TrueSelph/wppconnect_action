@@ -41,13 +41,20 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         st.session_state.pop(session_payload_key, None)
         # Optionally store a notification or feedback flag
 
-    # Ensure we have payload on first view
+    # initialize the session state for wppconnect status
     if session_payload_key not in st.session_state:
         get_wppconnect_status()
+        st.rerun()
 
     result = st.session_state.get(session_payload_key, {})
 
     with st.expander("WPPConnect Session Registration", expanded=True):
+
+        if result.get("status") == "ERROR":
+            st.error(
+                f"{result.get("message", "Session registration error.")} Check your WPPConnect Configuration and try again.",
+                icon="❌",
+            )
 
         if result != []:
             # Main logic block follows your requirements
@@ -71,13 +78,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     ):
                         with st.spinner("Logging out..."):
                             logout_wppconnect()
-                            result = st.session_state.get(session_payload_key, {})
+                            st.rerun()
+
                 with col2:
                     if st.button("Close", key="connected_close_session_btn"):
                         with st.spinner("Closing session..."):
                             close_wppconnect()
-                            get_wppconnect_status()
-                            result = st.session_state.get(session_payload_key, {})
+                            st.rerun()
 
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -94,13 +101,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     if st.button("Refresh", key="init_refresh_session_btn"):
                         with st.spinner("Refreshing session..."):
                             get_wppconnect_status()
-                            result = st.session_state.get(session_payload_key, {})
+                            st.rerun()
+
                 with col2:
                     if st.button("Close", key="init_close_session_btn"):
                         with st.spinner("Closing session..."):
                             close_wppconnect()
-                            get_wppconnect_status()
-                            result = st.session_state.get(session_payload_key, {})
+                            st.rerun()
 
             else:
                 qrcode = result.get("qrcode", "")
@@ -117,7 +124,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         if st.button("Start", key="not_qr_start_session_btn"):
                             with st.spinner("Starting session..."):
                                 get_wppconnect_status()
-                                result = st.session_state.get(session_payload_key, {})
+                                st.rerun()
 
                 else:
                     # qrcode exists: show QR image and refresh
@@ -129,6 +136,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         icon="ℹ️",
                     )
                     try:
+                        # autocorrect the base64 qrcode
+                        if not qrcode.startswith("data:image/png;base64,"):
+                            qrcode = f"data:image/png;base64,{qrcode}"
                         # Display the QR code centered
                         st.markdown(
                             f"""
@@ -148,10 +158,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         if st.button("Refresh", key="refresh_qr_btn"):
                             with st.spinner("Refreshing QR code..."):
                                 get_wppconnect_status()
-                                result = st.session_state.get(session_payload_key, {})
+                                st.rerun()
+
                     with col2:
                         if st.button("Close", key="qr_close_session_btn"):
                             with st.spinner("Closing session..."):
                                 close_wppconnect()
-                                get_wppconnect_status()
-                                result = st.session_state.get(session_payload_key, {})
+                                st.rerun()
