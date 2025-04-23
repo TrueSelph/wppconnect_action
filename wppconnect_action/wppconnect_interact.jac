@@ -240,7 +240,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 audio_url = interact_object.response.get('response', {}).get('audio_url');
 
                 if(audio_url) {
-                    audio_base64 = WPPConnectAPI.file_url_to_base64(audio_url);
+                    audio_base64 = WPPConnectAPI.file_url_to_base64(file_url=audio_url, force_prefix=False);
                     # sends audio via wppconnect message using url
                     response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio_base64);
 

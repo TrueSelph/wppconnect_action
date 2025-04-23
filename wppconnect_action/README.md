@@ -28,7 +28,7 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
 
 - **Jivas:** `^2.0.0`
 
-This action provides a wrapper for WhatsApp API communications using the WPPConnect API. As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
+This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
 
 ---
 
@@ -48,45 +48,36 @@ The WPPConnect Action provides an abstraction layer for interacting with WhatsAp
 
 ### Configuration Structure
 
-The configuration consists of the following components:
+To use the WPPConnect Action, you need to set up the following configuration parameters. These specify connection and behavioral details.
 
-### `webhook_properties`
-
-Defines the settings for the webhook, such as message handling and delays.
-
-```python
-webhook_properties = {
-    "send_delay": 3,
-    "webhook_message_received": "True",
-    "webhook_message_create": "False",
-    "webhook_message_ack": "True",
-    "webhook_message_download_media": "True"
-}
-```
+| Parameter            | Type    | Description                                                                                    | Default       |
+|----------------------|---------|------------------------------------------------------------------------------------------------|---------------|
+| `api_url`            | string  | WPPConnect Server URL (e.g., `"https://your-wppconnect-server.com"`)                          | `""`          |
+| `secret_key`         | string  | WPPConnect Server Secret Key for authentication.                                               | `""`          |
+| `token`              | string  | WPPConnect Server API Key for this session.                                                    | `""`          |
+| `session`            | string  | WPPConnect Server Instance ID.                                                                 | `""`          |
+| `base_url`           | string  | JIVAS Base URL (your application's base URL).                                                  | `""`          |
+| `webhook_url`        | string  | JIVAS webhook endpoint for receiving WPPConnect messages.                                      | `""`          |
+| `request_timeout`    | float   | Length of time (in seconds) this action waits for the API to complete a request.               | `10.0`        |
+| `chunk_length`       | int     | Maximum length of message to send. Longer texts are split into subsequent messages.             | `1024`        |
+| `use_pushname`       | bool    | Use the WhatsApp push name as the user name when set to `True`.                                | `True`        |
+| `ignore_newsletters` | bool    | Ignore newsletter messages when set to `True`.                                                 | `True`        |
+| `ignore_forwards`    | bool    | Ignore forwarded messages when set to `True`.                                                  | `True`        |
 
 ---
 
-### Example Configurations
+**Note:**
+ - All parameters should be set according to your WPPConnect Server and JIVAS deployment.
+ - `webhook_url` should be a publicly accessible endpoint that WPPConnect can POST to, in order to allow for event-driven communication.
 
-### Basic Configuration for WPPConnect
-
-```python
-base_url = "https://your_base_url"
-api_key = "your_wppconnect_api_key"
-instance_id = "your_instance_id"
-phone_number = "your_whatsapp_number"
-webhook_properties = {
-    "send_delay": 3,
-    "webhook_message_received": "True",
-    "webhook_message_create": "False",
-    "webhook_message_ack": "True",
-    "webhook_message_download_media": "True"
-}
-```
+---
 
 ### Best Practices
-- Validate your API keys and webhook URLs before deployment.
-- Test webhook registration in a staging environment before production use.
+
+- **Validate** your API keys, tokens, and webhook URLs before deploying in production.
+- **Test** the webhook registration and sample message flow in a staging environment first.
+- Adjust `chunk_length` if you have use cases that involve very long text messages.
+- Use `ignore_newsletters` and `ignore_forwards` to filter out less relevant messages and avoid unnecessary processing.
 
 ---
 
