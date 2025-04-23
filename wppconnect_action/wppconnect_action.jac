@@ -1,6 +1,7 @@
 import:py os;
 import:py logging;
 import:py traceback;
+import:py from typing { Union }
 import:py from logging { Logger }
 import:py from jivas.agent.modules.agentlib.utils { Utils }
 import:py from .modules.wppconnect_api { WPPConnectAPI }
@@ -20,10 +21,12 @@ node WPPConnectAction :Action: {
     has session:str = ""; # WPPConnect Server Instance ID
     has base_url:str = ""; # Jivas Base URL
     has webhook_url:str = ""; # JIVAS webhook for WPPConnect
+    has request_timeout:float = 10.0; # the length of time this action waits for api to complete request
     has chunk_length:int = 1024; # max length of message to send
     # when set, the wa push name value is used as the user name
     has use_pushname:bool = True; # use the WhatsApp push name as the user name
     has ignore_newsletters:bool = True; # ignore newsletters
+    has ignore_forwards:bool = True; # ignore forwarded messages
 
 
     can on_enable(){
@@ -31,18 +34,6 @@ node WPPConnectAction :Action: {
         if(not registered) {
             self.enabled = False;
         }
-    }
-
-    can api() -> WPPConnectAPI {
-        # load the api instance
-
-        return WPPConnectAPI(
-            api_url=self.api_url,
-            session=self.session,
-            token=self.token,
-            secret_key=self.secret_key
-        );
-
     }
 
     can on_register {
@@ -76,6 +67,61 @@ node WPPConnectAction :Action: {
                 self.enabled = False;
             }
         }
+    }
+
+    can healthcheck() -> Union[bool, dict] {
+        try {
+            if(not self.api_url){
+                return {
+                    "status": False,
+                    "message": "API URL is not set.",
+                    "severity": "error"
+                };
+            }
+
+            if( result := self.api().check_connection() ) {
+                if 'error' in result.keys() {
+                    return {
+                        "status": False,
+                        "message": result.get('error'),
+                        "severity": "error"
+                    };
+                }
+                if('status' in result.keys()) {
+                    status = result.get('status');
+                    if not status {
+                        return {
+                            "status": status,
+                            "message": result.get('message'),
+                            "severity": "warning"
+                        };
+                    } else {
+                        return True;
+                    }
+                }
+            }
+            return False;
+        } except Exception as e {
+            self.logger.error(f"An exception occurred in {self.label}: \n{traceback.format_exc()}\n");
+            return {
+                "status": False,
+                "message": "There was an error : {e}",
+                "severity": "error"
+            };
+        }
+    }
+
+    can api() -> WPPConnectAPI {
+        # load the api instance
+
+        return WPPConnectAPI(
+            api_url=self.api_url,
+            session=self.session,
+            token=self.token,
+            secret_key=self.secret_key,
+            timeout=self.request_timeout
+        );
+
     }
 
     can register_session() -> dict {
@@ -116,24 +162,6 @@ node WPPConnectAction :Action: {
         return True;
     }
 
-    can healthcheck() -> bool {
-        try {
-            if(
-                self.base_url and
-                self.token and
-                self.api_url and
-                self.session and
-                self.webhook_url
-            ){
-                return True;
-            }
-            return False;
-        } except Exception as e {
-            self.logger.error(f"An exception occurred in {self.label}:\n{traceback.format_exc()}\n");
-            return False;
-        }
-    }
-
     can sanitize_message(message:str) {
         return message.replace("**", "*").replace("<br/>", "\n").replace("<b>", "*").replace("</b>", "*");
     }
@@ -161,9 +189,9 @@ node WPPConnectAction :Action: {
                 mime_type = Utils.get_mime_type(mime_type=message.mime);
                 content = self.sanitize_message(message = message.get_content());
                 if(mime_type['file_type'] in ["document", "video"]) {
-                    self.api().send_file(phone_number= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content);
+                    self.api().send_file(phone= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content);
                 } elif(mime_type['file_type'] == "image") {
-                    self.api().send_image(phone_number=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content);
+                    self.api().send_image(phone=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content);
                 }
             } elif(message.get_type() == MessageType.MULTI.value) {
                 for message_item in message.get_content_items() {
@@ -177,9 +205,9 @@ node WPPConnectAction :Action: {
                         mime_type = Utils.get_mime_type(mime_type=message_item.mime);
                         content = self.sanitize_message(message = message_item.get_content());
                         if(mime_type['file_type'] in ["document", "video"]) {
-                            self.api().send_file(phone_number= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
+                            self.api().send_file(phone= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
                         }elif(mime_type['file_type'] == "image") {
-                            self.api().send_image(phone_number=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
+                            self.api().send_image(phone=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
                         }
                     }
                 }
