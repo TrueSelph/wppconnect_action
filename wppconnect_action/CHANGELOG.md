@@ -18,3 +18,7 @@
 - Bugfix: incorrect parameter name
 - Added ignore forwards setting to ignore forwarded messages by default
 - Added a timeout setting for WppConnect API requests as a remedy to the sporadic lockout issue with the WPPConnect service
+
+### 0.0.7
+- Patched file_url_to_base64 to selectively apply prefix
+- Updated Readme

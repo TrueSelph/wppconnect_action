@@ -786,7 +786,7 @@ class WPPConnectAPI:
     # 6. Media (Download/Upload helpers)
 
     @staticmethod
-    def file_url_to_base64(file_url: str) -> Optional[str]:
+    def file_url_to_base64(file_url: str, force_prefix: bool = True) -> Optional[str]:
         """
         Downloads file from any web-URL and encodes contents as base64.
         Does not store the file to any persistent file or storage backend.
@@ -803,11 +803,19 @@ class WPPConnectAPI:
             # Base64 encode the file content
             encoded = base64.b64encode(response.content).decode("utf-8")
 
-            # Add MIME type prefix
-            base64_with_prefix = f"data:{content_type};base64,{encoded}"
-            return base64_with_prefix
-        except Exception as ex:
-            WPPConnectAPI.logger.error(f"Error downloading or encoding file: {ex}")
+            if force_prefix:
+                # Prepare prefix
+                prefix = f"data:{content_type};base64,"
+                # If it's already a data URL, return as-is
+                if encoded.startswith(prefix):
+                    return encoded
+                # Otherwise, prepend the prefix
+                return prefix + encoded
+
+            return encoded
+
+        except Exception as e:
+            WPPConnectAPI.logger.error(f"Error downloading or encoding file: {e}")
             return None
 
     # 7. Utility & info
