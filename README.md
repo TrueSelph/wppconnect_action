@@ -12,7 +12,7 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
 
 - **Name:** `jivas/wppconnect_action`
 - **Author:** [V75 Inc.](https://v75inc.com/)
-- **Architype:** `WppconnectAction`
+- **Architype:** `WPPConnectAction`
 
 ## Meta Information
 
@@ -28,7 +28,7 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
 
 - **Jivas:** `^2.0.0`
 
-This package, developed by V75 Inc., provides a JIVAS action wrapper for WhatsApp API communications using the WPPConnect API. As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
+This action provides a wrapper for WhatsApp API communications using the WPPConnect API. As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
 
 ---
 
@@ -132,4 +132,4 @@ webhook_properties = {
 
 ## 🎗 License
 
-This project is protected under the Apache License 2.0. See [LICENSE](./LICENSE) for more information.
+This project is protected under the Apache License 2.0. See [LICENSE](../LICENSE) for more information.

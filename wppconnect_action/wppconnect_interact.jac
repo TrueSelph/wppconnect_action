@@ -64,7 +64,8 @@ walker wppconnect_interact :interact_graph_walker: {
 
         if( action_node := (here.get_actions().get(action_label='WPPConnectAction')) ) {
 
-            if(not action_node.enabled) {
+            # ignore forwards if set
+            if(data.get('isForwarded') and  action_node.ignore_forwards) {
                 Jac.get_context().status = 200;
                 disengage;
             }

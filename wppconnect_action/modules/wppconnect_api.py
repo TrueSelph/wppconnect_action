@@ -17,7 +17,12 @@ class WPPConnectAPI:
     logger = logging.getLogger(__name__)
 
     def __init__(
-        self, api_url: str, session: str, token: str, secret_key: Optional[str] = None
+        self,
+        api_url: str,
+        session: str,
+        token: str,
+        secret_key: Optional[str] = None,
+        timeout: float = 10.0,
     ) -> None:
         """
         Initializes the WPPConnectAPI object with base URL, instance, and credentials.
@@ -31,6 +36,7 @@ class WPPConnectAPI:
         self.session = session
         self.token = token
         self.secret_key = secret_key or os.environ.get("WPP_SECRET_KEY", "")
+        self.timeout = timeout
 
     def send_rest_request(
         self,
@@ -42,7 +48,7 @@ class WPPConnectAPI:
         json_body: bool = True,
         use_full_url: bool = False,
     ) -> dict:
-        """Generic HTTP request to WPPConnect API. Handles GET, POST, PUT, DELETE."""
+        """Generic HTTP request to WPPConnect API. Handles GET, POST, PUT, DELETE with timeout."""
         if headers is None:
             headers = {
                 "Content-Type": "application/json",
@@ -65,6 +71,7 @@ class WPPConnectAPI:
                 json=json_payload,
                 data=body,
                 params=params,
+                timeout=self.timeout,  # request timeout
             )
             response.raise_for_status()
             if response.content:
@@ -73,6 +80,11 @@ class WPPConnectAPI:
                 except Exception:
                     return {"ok": True, "raw": response.content}
             return {"ok": True, "no_content": True}
+        except requests.Timeout:
+            self.logger.error(
+                f"WPPConnect request timed out after {self.timeout} seconds."
+            )
+            return {"ok": False, "error": f"Timeout after {self.timeout} seconds"}
         except requests.RequestException as e:
             self.logger.error(f"WPPConnect request error: {str(e)}")
             return {"ok": False, "error": str(e)}
@@ -85,7 +97,7 @@ class WPPConnectAPI:
         payload = {}
 
         try:
-
+            # WPPConnectAPI.logger.warning(request)
             event = request.get("event")
             if event not in ["onmessage", "onpollresponse", "onack"]:
                 return {}
@@ -101,7 +113,7 @@ class WPPConnectAPI:
                 "location": request.get("location", {}),
                 "fromMe": request.get("fromMe", False),
                 "isGroup": request.get("isGroupMsg", False),
-                "isForwarded": request.get("isForwarded", False),
+                "isForwarded": request.get("isForwarded", True),
                 "sender_name": request.get("notifyName", ""),
             }
 
@@ -782,8 +794,18 @@ class WPPConnectAPI:
         try:
             response = requests.get(file_url)
             response.raise_for_status()
+
+            # Get MIME type from response header
+            content_type = response.headers.get(
+                "Content-Type", "application/octet-stream"
+            )
+
+            # Base64 encode the file content
             encoded = base64.b64encode(response.content).decode("utf-8")
-            return encoded
+
+            # Add MIME type prefix
+            base64_with_prefix = f"data:{content_type};base64,{encoded}"
+            return base64_with_prefix
         except Exception as ex:
             WPPConnectAPI.logger.error(f"Error downloading or encoding file: {ex}")
             return None

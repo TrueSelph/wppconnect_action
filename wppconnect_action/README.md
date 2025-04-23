@@ -28,7 +28,7 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
 
 - **Jivas:** `^2.0.0`
 
-This package, developed by V75 Inc., provides a JIVAS action wrapper for WhatsApp API communications using the WPPConnect API. As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
+This action provides a wrapper for WhatsApp API communications using the WPPConnect API. As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
 
 ---
 

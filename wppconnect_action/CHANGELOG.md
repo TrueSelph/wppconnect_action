@@ -13,3 +13,8 @@
 ### 0.0.5
 - Added behaviour to handle quoted messages as context in replies
 - Updated action app, added refinements to make UI more usable
+
+### 0.0.6
+- Bugfix: incorrect parameter name
+- Added ignore forwards setting to ignore forwarded messages by default
+- Added a timeout setting for WppConnect API requests as a remedy to the sporadic lockout issue with the WPPConnect service
