@@ -22,3 +22,6 @@
 ### 0.0.7
 - Patched file_url_to_base64 to selectively apply prefix
 - Updated Readme
+
+### 0.0.8
+- Patched wppconnect_api to allow messages sent via Agent whatsapp to be received as unprompted interactions
