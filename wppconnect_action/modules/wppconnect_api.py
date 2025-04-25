@@ -97,7 +97,7 @@ class WPPConnectAPI:
         payload = {}
 
         try:
-            # WPPConnectAPI.logger.warning(request)
+
             event = request.get("event")
             if event not in ["onmessage", "onpollresponse", "onack"]:
                 return {}
@@ -139,7 +139,7 @@ class WPPConnectAPI:
                 payload["isGroup"] = True
 
             if payload["message_type"] == "chat":
-                payload["body"] = request.get("content", "")
+                payload["body"] = request.get("content", request.get("body", ""))
             elif payload["message_type"] in ["image", "video", "document"]:
                 payload["media"] = request.get("body", "")
                 payload["filename"] = request.get("filename", "")
