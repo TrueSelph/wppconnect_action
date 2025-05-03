@@ -58,7 +58,7 @@ walker broadcast_message :interact_graph_walker: {
     #     "ignore_list": []
     # }
 
-    # returns a job id
+    # returns a job id or None if the message is invalid
 
     has message:dict = {};
     has ignore_list:list = [];

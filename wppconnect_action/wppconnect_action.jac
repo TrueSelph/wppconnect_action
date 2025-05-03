@@ -2,6 +2,8 @@ import:py os;
 import:py uuid;
 import:py logging;
 import:py traceback;
+import:py random;
+import:py from datetime { datetime }
 import:py from typing { Union }
 import:py from logging { Logger }
 import:py from jivas.agent.modules.agentlib.utils { Utils }
@@ -23,15 +25,20 @@ node WPPConnectAction :Action: {
     has token:str = ""; # WPPConnect Server API Key for this session
     has session:str = ""; # WPPConnect Server Instance ID
     has base_url:str = ""; # Jivas Base URL
+    # API settings
     has webhook_url:str = ""; # JIVAS webhook for WPPConnect
     has request_timeout:float = 10.0; # the length of time this action waits for api to complete request
     has chunk_length:int = 1024; # max length of message to send
-    # when set, the wa push name value is used as the user name
     has use_pushname:bool = True; # use the WhatsApp push name as the user name
     has ignore_newsletters:bool = True; # ignore newsletters
     has ignore_forwards:bool = True; # ignore forwarded messages
-
-    has outbox_send_interval:float = 2.0; # the interval (delay) in seconds between sending messages from the outbox
+    # outbox settings
+    has outbox_base_rate_per_minute:int = 20;  # WhatsApp API rate limit for sending messages
+    has outbox_send_interval:float = 0.5; # the interval (delay) in seconds between sending messages from the outbox
+    has outbox_min_send_interval:float = 1.0; # the minumum interval (delay) in seconds between sending messages from the outbox
+    has outbox_max_send_interval:float = 10.0; # the maximum interval (delay) in seconds between sending messages from the outbox
+    has outbox_min_batch_size:int = 1; # the minimum batch size of messages to send from the outbox
+    has outbox_max_batch_size:int = 10; # the maximum batch size of messages to send from the outbox
     has outbox:dict = {}; # outbox for outgoing mass messages
 
 
@@ -77,18 +84,31 @@ node WPPConnectAction :Action: {
     }
 
     can pulse() {
-
-        if(not self.has_outbox_items()) {
+        # Main scheduling pulse with adaptive rate control
+        if not self.has_outbox_items() {
             self.stop_outbox_scheduler();
             return;
         }
 
-        if((result := self.healthcheck()) != True) {
+        # Check system health with exponential backoff
+        if (health_status := self.healthcheck()) != True {
+            self.logger.warning(f"Outbox scheduler backing off due to healthcheck failure.");
             return;
         }
 
-        # grab and send the next item in the outbox
-        self.send_next_outbox_item();
+        # Calculate dynamic batch size based on current rate window
+        batch_size = self.calculate_dynamic_batch_size();
+
+        # Process messages with current batch size
+        (processed, successes, failures) = self.send_from_outbox(batch_size=batch_size);
+
+        # Update rate limiting parameters
+        self.update_send_parameters(successes, failures);
+
+        # Restart scheduler with new parameters if items remain
+        if self.has_outbox_items() {
+            self.restart_scheduler();
+        }
     }
 
     can healthcheck() -> Union[bool, dict] {
@@ -133,6 +153,8 @@ node WPPConnectAction :Action: {
         }
     }
 
+    # --------------- WPPConnectAPI ----------------
+
     can api() -> WPPConnectAPI {
         # load the api instance
 
@@ -144,27 +166,6 @@ node WPPConnectAction :Action: {
             timeout=self.request_timeout
         );
 
-    }
-
-    can start_outbox_scheduler() {
-        # start the outbox scheduler
-        if(self.has_outbox_items()) {
-            # apply configurations to pulse action
-            if(pulse_action := self.get_agent().get_action(action_label="PulseAction")) {
-                # add the outbox scheduler to the pulse action
-                pulse_action.add_schedule(self.get_type(), f'every({self.outbox_send_interval}).seconds');
-                self.logger.info(f"wppconnect outbox scheduler running");
-            }
-        }
-    }
-
-    can stop_outbox_scheduler() {
-        # stop the outbox scheduler
-        if(pulse_action := self.get_agent().get_action(action_label="PulseAction")) {
-            # remove the outbox scheduler from the pulse action
-            pulse_action.remove_schedule(self.get_type());
-            self.logger.info(f"wppconnect outbox scheduler stopped");
-        }
     }
 
     can register_session() -> dict {
@@ -261,209 +262,6 @@ node WPPConnectAction :Action: {
         return result;
     }
 
-    can has_outbox_items() -> bool {
-        # check if there are any items in the outbox
-        if self.outbox and len(self.outbox) > 0 {
-            for (job_id, job) in self.outbox.items() {
-                if len(job['pending']) > 0 {
-                    return True;
-                }
-            }
-        }
-        return False;
-    }
-
-    can add_outbox_job(messages:list, callback_url:str="") -> str {
-        # add a job to the outbox based on a list of message items
-        # the structure of the messages is as follows:
-        # TEXT
-        # [ {
-        #     "to": "session_id",
-        #     "message": {
-        #         "message_type": "TEXT",
-        #         "content": "message content"
-        #     }
-        # } ]
-        # MEDIA
-        # [ {
-        #     "to": "session_id",
-        #     "message": {
-        #         "message_type": "MEDIA",
-        #         "mime": "image/jpeg",
-        #         "content": "message content",
-        #         "data": {
-        #             "url": "https://example.com/image.jpg",
-        #             "file_name": "image.jpeg"
-        #         }
-        #     }
-        # } ]
-        # MULTI
-        # [ {
-        #     "to": "session_id",
-        #     "message": {
-        #         "message_type": "MULTI",
-        #         "content": [
-        #             {
-        #                 "message_type": "TEXT",
-        #                 "content": "message content"
-        #             },
-        #             {
-        #                 "message_type": "MEDIA",
-        #                 "mime": "image/jpeg",
-        #                 "content": "message content",
-        #                 "data": {
-        #                     "url": "https://example.com/image.jpg",
-        #                     "file_name": "image.jpg"
-        #                 }
-        #             }
-        #         ]
-        #     }
-        # } ]
-
-        # the callback_url is optional and can be used to send a callback to the agent when the job is complete
-
-        if not messages {
-            return;
-        }
-
-        job_id = str(uuid.uuid4());
-
-        # prepare the list of message items
-
-        for item in messages {
-
-            message = item.get('message');
-            session_id = item.get('to');
-            message_type = message.get('message_type');
-            # check if the item is a valid message
-            if not message {
-                continue;
-            }
-            # check if the item has a session id
-            if not session_id {
-                continue;
-            }
-            # check if the item has a message type
-            if not message_type {
-                continue;
-            }
-
-            interaction_message = self.prepare_interaction_message(message=message);
-
-            # add the item to the outbox
-            self.add_outbox_item(job_id=job_id, session_id=session_id, message=interaction_message);
-
-        }
-
-        if callback_url {
-            # add the callback url to the job if supplied
-            self.outbox[job_id]['callback_url'] = callback_url;
-        }
-
-        # start the scheduler if not already running
-        self.start_outbox_scheduler();
-
-        return job_id;
-    }
-
-    can add_outbox_item(job_id:str, session_id:str, message:InteractionMessage) {
-        # add an item to the outbox under a job id
-        if not all([job_id, session_id, message]) {
-            return;
-        }
-
-        item_id = str(uuid.uuid4());
-
-        if job_id in self.outbox {
-            # Add the item to the existing outbox job
-            self.outbox[job_id]['pending'][item_id] = {
-                'session_id': session_id,
-                'status': 'pending',
-                'message': message.export(),
-            };
-        } else {
-            # Create a new outbox job structure
-            self.outbox[job_id] = {
-                'pending': {
-                    item_id: {
-                        'session_id': session_id,
-                        'status': 'pending',
-                        'message': message.export(),
-                    }
-                },
-                'processed': {},
-                'failed': {}
-            };
-        }
-    }
-
-    can send_next_outbox_item() {
-        # send the next item in the outbox
-        if not self.has_outbox_items() {
-            return;
-        }
-
-        do_callback = False;
-
-        for (job_id, job) in self.outbox.items() {
-
-            if len(job['pending']) > 0 {
-                # get the first item in the pending list
-                item_id = list(job['pending'].keys())[0];
-                item = job['pending'][item_id];
-
-                # load the interaction message
-                interaction_message = self.prepare_interaction_message(message=item['message']);
-                # send the message
-                result = self.send_message(session_id=item['session_id'], message=interaction_message);
-
-                if result.get('status') != 'success' {
-
-                    # move the item to failed
-                    job['failed'][item_id] = item;
-                    del job['pending'][item_id];
-
-                } else {
-
-                    # move the item to processed
-                    job['processed'][item_id] = item;
-
-                    # if this is the last item in the pending list,
-                    # ensure we call the callback url, if any
-                    if len(job['pending']) == 1 and job.get('callback_url') {
-                        do_callback = True;
-                    }
-                    # then, remove the item from the pending list
-                    del job['pending'][item_id];
-
-                    # add unprompted interaction to the interaction response for context
-                    agent_node = self.get_agent();
-                    frame_node = agent_node.get_memory().get_frame(agent_id = agent_node.id, session_id = item['session_id'], force_session=True);
-                    frame_node.add_unprompted_interaction(message = interaction_message.get_content(), channel = "whatsapp");
-                }
-
-                # update the outbox
-                self.outbox[job_id] = job;
-
-                if do_callback {
-                    # call the callback url if supplied
-                    self.api().send_rest_request(
-                        endpoint=job['callback_url'],
-                        method='POST',
-                        data={
-                            'status': 'success' if len(self.outbox[job_id]['failed']) == 0 and len(self.outbox[job_id]['pending']) == 0 and len(self.outbox[job_id]['processed']) > 0 else 'error',
-                            'result': self.outbox[job_id]
-                        },
-                        json_body=True,
-                        use_full_url=True
-                    );
-                }
-
-                break; # exit after processing one item
-            }
-        }
-    }
-
     can prepare_interaction_message(message:dict) -> InteractionMessage {
         # prepare the interaction message based on the message type
         if not message {
@@ -513,6 +311,365 @@ node WPPConnectAction :Action: {
         }
 
         return None;
+    }
+
+    # --------------- OUTBOX SCHEDULER ----------------
+
+    can restart_scheduler() {
+        # Gracefully update scheduler with new parameters
+        self.stop_outbox_scheduler();
+        self.start_outbox_scheduler();
+        self.logger.debug(f"Outbox scheduler restarted with interval {self.outbox_send_interval}s");
+    }
+
+    can has_outbox_items() -> bool {
+        # check if there are any items in the outbox
+        if self.outbox and len(self.outbox) > 0 {
+            for (job_id, job) in self.outbox.items() {
+                if len(job['pending']) > 0 {
+                    return True;
+                }
+            }
+        }
+        return False;
+    }
+
+    can start_outbox_scheduler() {
+
+        # Proceed with scheduler start
+        if self.has_outbox_items() {
+            if pulse_action := self.get_agent().get_action(action_label="PulseAction") {
+                pulse_action.add_schedule(
+                    self.get_type(),
+                    f'every({self.outbox_send_interval}).seconds'
+                );
+                self.logger.info(
+                    f"Outbox scheduler started: {self.outbox_send_interval}s interval "
+                    f"(Batch size: {self.outbox_max_batch_size})"
+                );
+            }
+        }
+    }
+
+    can stop_outbox_scheduler() {
+        # stop the outbox scheduler
+
+        if(pulse_action := self.get_agent().get_action(action_label="PulseAction")) {
+            # remove the outbox scheduler from the pulse action
+            pulse_action.remove_schedule(self.get_type());
+            self.logger.info(f"Outbox scheduler stopped");
+        }
+    }
+
+    can send_from_outbox(batch_size: int = 1) -> (int, int, int) {
+        # Enhanced batch processing with success tracking
+        if not self.has_outbox_items() {
+            return (0, 0, 0);
+        }
+
+        processed_count = 0;
+        success_count = 0;
+        failure_count = 0;
+        jobs = list(self.outbox.items());
+
+        while processed_count < batch_size and len(jobs) > 0 {
+            (job_id, job) = jobs.pop(0);
+
+            if not job['pending'] {
+                continue;
+            }
+
+            # Process batch slice
+            processable = min(batch_size - processed_count, len(job['pending']));
+            items = list(job['pending'].items())[:processable];
+
+            for (item_id, item) in items {
+                try {
+                    interaction_message = self.prepare_interaction_message(
+                        message=item['message']
+                    );
+                    result = self.send_message(
+                        session_id=item['session_id'],
+                        message=interaction_message
+                    );
+
+                    if result.get('status') == 'success' {
+                        job['processed'][item_id] = item;
+                        success_count += 1;
+                        self.update_interaction_context(item, interaction_message);
+                    } else {
+                        job['failed'][item_id] = item;
+                        failure_count += 1;
+                    }
+
+                    del job['pending'][item_id];
+                    processed_count += 1;
+                } except Exception as e {
+                    self.logger.error(f"Outbox message processing failed: {str(e)}");
+                    job['failed'][item_id] = item;
+                    del job['pending'][item_id];
+                    failure_count += 1;
+                    processed_count += 1;
+                }
+            }
+
+            # Update job state
+            self.outbox[job_id] = job;
+            self.maybe_trigger_callback(job_id, job);
+        }
+
+        return (processed_count, success_count, failure_count);
+    }
+
+    can update_interaction_context(item:dict, message:InteractionMessage) {
+        # Shared context update logic
+        agent_node = self.get_agent();
+        frame_node = agent_node.get_memory().get_frame(
+            agent_id=agent_node.id,
+            session_id=item['session_id'],
+            force_session=True
+        );
+        frame_node.add_unprompted_interaction(
+            message=message.get_content(),
+            channel="whatsapp"
+        );
+    }
+
+    can add_outbox_job(messages: list, callback_url: str = "") -> str {
+        # Adds a batch of messages to the outbox with comprehensive validation
+        # Returns job ID if successful, empty string if no valid messages
+
+        if not messages or not isinstance(messages, list) {
+            self.logger.error("Invalid messages format - expected list of message dicts");
+            return "";
+        }
+
+        job_id = str(uuid.uuid4());
+        valid_items = 0;
+        validation_errors = [];
+
+        # Initialize job structure before processing messages
+        self.outbox[job_id] = self.create_job_structure(callback_url);
+
+        for (index, item) in enumerate(messages) {
+            if not self.validate_message_item(item, index, validation_errors) {
+                continue;
+            }
+
+            try {
+                interaction_message = self.prepare_interaction_message(
+                    message=item['message']
+                );
+                self.add_outbox_item(
+                    job_id=job_id,
+                    session_id=item['to'],
+                    message=interaction_message
+                );
+                valid_items += 1;
+            } except Exception as e {
+                error_msg = f"Message {index} processing failed: {str(e)}";
+                validation_errors.append(error_msg);
+                self.logger.error(error_msg);
+            }
+        }
+
+        # Clean up empty jobs
+        if valid_items == 0 {
+            del self.outbox[job_id];
+            self.logger.warning(f"Job {job_id} contained no valid messages");
+            if validation_errors {
+                self.logger.debug(f"Validation errors:\n" + "\n".join(validation_errors));
+            }
+            return "";
+        }
+
+        # Start scheduler only if valid messages exist
+        self.start_outbox_scheduler();
+        return job_id;
+    }
+
+    can validate_message_item(item: dict, index: int, error_log: list) -> bool {
+        # Validates individual message items with detailed error reporting
+        required_keys = {'to', 'message'};
+        message_types = {'TEXT', 'MEDIA', 'MULTI'};
+
+        if not isinstance(item, dict) {
+            error_log.append(f"Item {index}: Not a dictionary");
+            return False;
+        }
+
+        missing_keys = required_keys - item.keys();
+        if missing_keys {
+            error_log.append(f"Item {index}: Missing keys {missing_keys}");
+            return False;
+        }
+
+        message = item.get('message', {});
+        msg_type = message.get('message_type', '').upper();
+
+        if msg_type not in message_types {
+            error_log.append(f"Item {index}: Invalid message type '{msg_type}'");
+            return False;
+        }
+
+        # Type-specific validation
+        validation_map = {
+            'TEXT': self.validate_text_message,
+            'MEDIA': self.validate_media_message,
+            'MULTI': self.validate_multi_message
+        };
+
+        if not validation_map[msg_type](message, index) {
+            return False;
+        }
+
+        return True;
+    }
+
+    can validate_text_message(message: dict, index: int) -> bool {
+        if not message.get('content') {
+            self.logger.error(f"Item {index}: TEXT message missing content");
+            return False;
+        }
+        return True;
+    }
+
+    can validate_media_message(message: dict, index: int) -> bool {
+        required = {'mime', 'content', 'data'};
+        missing = required - message.keys();
+
+        if missing {
+            self.logger.error(f"Item {index}: MEDIA message missing {missing}");
+            return False;
+        }
+
+        if 'url' not in message['data'] {
+            self.logger.error(f"Item {index}: MEDIA message missing URL");
+            return False;
+        }
+        return True;
+    }
+
+    can validate_multi_message(message: dict, index: int) -> bool {
+        components = message.get('content', []);
+
+        if not isinstance(components, list) or len(components) < 2 {
+            self.logger.error(f"Item {index}: MULTI message requires 2+ components");
+            return False;
+        }
+
+        for (i, comp) in enumerate(components) {
+            if not comp.get('message_type') {
+                self.logger.error(f"Item {index}: Component {i} missing message_type");
+                return False;
+            }
+        }
+        return True;
+    }
+
+    can create_job_structure(callback_url: str = "") -> dict {
+        # Returns standardized job structure with metadata
+        return {
+            'pending': {},
+            'processed': {},
+            'failed': {},
+            'callback_url': callback_url,
+            'created_at': datetime.now().isoformat(),
+            'stats': {
+                'total': 0,
+                'success_rate': 0.0
+            }
+        };
+    }
+
+    can add_outbox_item(job_id: str, session_id: str, message: InteractionMessage) {
+        # Adds validated item to specified job with type checking
+
+        if not all([
+            isinstance(job_id, str),
+            isinstance(session_id, str),
+            isinstance(message, InteractionMessage)
+        ]) {
+            self.logger.error("Invalid parameters for outbox item");
+            return;
+        }
+
+        if job_id not in self.outbox {
+            self.logger.warning(f"Job {job_id} does not exist - creating new structure");
+            self.outbox[job_id] = self.create_job_structure();
+        }
+
+        item_id = str(uuid.uuid4());
+        self.outbox[job_id]['pending'][item_id] = {
+            'session_id': session_id,
+            'message': message.export(),
+            'added_at': datetime.now().isoformat()
+        };
+
+        # Update job statistics
+        self.outbox[job_id]['stats']['total'] += 1;
+    }
+
+    can maybe_trigger_callback(job_id:str, job:dict) {
+        # Unified callback handler
+        if not job['pending'] and job.get('callback_url') {
+            status = 'success' if not job['failed'] else 'partial';
+            self.api().send_rest_request(
+                endpoint=job['callback_url'],
+                method='POST',
+                data={
+                    'status': status,
+                    'job_id': job_id,
+                    'success_count': len(job['processed']),
+                    'failure_count': len(job['failed']),
+                    'pending_count': len(job['pending']),
+                    'timestamp': datetime.now().isoformat()
+                },
+                json_body=True,
+                use_full_url=True
+            );
+        }
+    }
+
+    can clamp(value:Union[int,float], min_val:Union[int,float], max_val:Union[int,float]) -> Union[int,float] {
+        # Utility function for boundary constraints
+        return max(min_val, min(value, max_val));
+    }
+
+    can calculate_dynamic_batch_size() -> int {
+        # Calculate batch size based on success rate and current interval
+        base_size = max(1, int(self.outbox_base_rate_per_minute * (self.outbox_send_interval / 60)));
+
+        # Add jitter to prevent patterns
+        jittered_size = base_size * random.uniform(0.8, 1.2);
+
+        # Apply min/max constraints
+        return self.clamp(int(jittered_size), self.outbox_min_batch_size, self.outbox_max_batch_size);
+    }
+
+    can update_send_parameters(successes: int, failures: int) {
+        # Adaptive rate control algorithm
+        total = successes + failures;
+        success_rate = successes / total if total > 0 else 1.0;
+
+        # Calculate interval adjustment
+        if success_rate < 0.7 {
+            # Degraded performance - slow down
+            adjustment_factor = 1 + (0.7 - success_rate);
+            self.outbox_send_interval *= adjustment_factor;
+        } else {
+            # Good performance - speed up cautiously
+            adjustment_factor = 1 - (success_rate - 0.7) * 0.3;
+            self.outbox_send_interval *= adjustment_factor;
+        }
+
+        # Apply jitter and constraints
+        self.outbox_send_interval *= float(random.uniform(0.9, 1.1));
+        self.outbox_send_interval = self.clamp(
+            self.outbox_send_interval,
+            self.outbox_min_send_interval,
+            self.outbox_max_send_interval
+        );
     }
 
 }

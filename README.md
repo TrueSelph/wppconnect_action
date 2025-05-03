@@ -6,7 +6,7 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/wppconnect_action)
 ![GitHub](https://img.shields.io/github/license/TrueSelph/wppconnect_action)
 
-JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
+JIVAS action wrapper for WhatsApp API communications using the WPPConnect API with advanced mass messaging outbox. This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version ^2.0.0.
 
 ## Package Information
 
@@ -21,14 +21,11 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API.
 - **Type:** action
 
 ## Configuration
-
 - **Singleton:** true
-
 ## Dependencies
-
-- **Jivas:** `^2.0.0`
-
-This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version 2.0.0.
+- **Jivas:** `~2.0.0-aplha.40`
+- **PulseAction:** `~0.0.2`
+- **WPPConnect Server:** `~2.8.5`
 
 ---
 
@@ -43,6 +40,16 @@ The WPPConnect Action provides an abstraction layer for interacting with WhatsAp
 - **Webhook registration** for message handling.
 - **Message broadcasting** to multiple recipients.
 - **Integration** with WPPConnect for sending text, media, and location messages.
+
+### Dynamic Adaptation
+
+The WPPConnect Action includes advanced mechanisms to optimize message delivery:
+
+- **Automatic Interval Adjustment**: Dynamically modifies send intervals based on success rates to ensure efficient delivery.
+- **Variable Batch Sizes**: Alternates batch sizes between defined minimum and maximum values for flexibility.
+- **Random Jitter**: Introduces slight randomness to sending intervals to prevent detection of predictable patterns.
+
+These features enhance reliability and minimize disruptions during high-volume messaging operations.
 
 ---
 
@@ -63,21 +70,156 @@ To use the WPPConnect Action, you need to set up the following configuration par
 | `use_pushname`       | bool    | Use the WhatsApp push name as the user name when set to `True`.                                | `True`        |
 | `ignore_newsletters` | bool    | Ignore newsletter messages when set to `True`.                                                 | `True`        |
 | `ignore_forwards`    | bool    | Ignore forwarded messages when set to `True`.                                                  | `True`        |
+| `outbox_base_rate_per_minute`    | int    | Base messages per minute (adapts dynamically).                                                  | `20`        |
+| `outbox_send_interval`    | float    | Current operational delay between batches.                                                  | `2.0`        |
+| `outbox_min_send_interval`    | float    | Absolute minimum delay (seconds).                                                  | `1.0`        |
+| `outbox_max_send_interval`    | float    | Maximum allowed delay (seconds).                                                  | `10.0`        |
+| `outbox_min_batch_size`    | int    | Maximum messages per batch.                                                  | `1`        |
+| `outbox_max_batch_size`    | int    | Minimum messages per batch..                                                  | `10`        |
+
 
 ---
 
-**Note:**
- - All parameters should be set according to your WPPConnect Server and JIVAS deployment.
- - `webhook_url` should be a publicly accessible endpoint that WPPConnect can POST to, in order to allow for event-driven communication.
+### Notes on Configuration
+
+- **Parameter Settings**: Ensure all parameters are configured based on your WPPConnect Server and JIVAS deployment requirements.
+- **Webhook URL**: The `webhook_url` must be a publicly accessible endpoint to enable event-driven communication from WPPConnect.
+- **Outbox Base Rate**: Set `outbox_base_rate_per_minute` to `20` for new numbers. This value should align with WhatsApp's acceptable rate-per-minute limits (default is `20`).
+- **Auto Callback**: This when sending or broadcasting messages in batches, this action will trigger your supplied callback upon completion.
+- **Batch Size Limits**: For Tier 2 accounts, keep `outbox_max_batch_size` at or below `10` to comply with account limitations.
+- **Validation**: Validate your API keys, tokens, and webhook URLs before deploying in production.
+- **Chunk Length**: Adjust `chunk_length` if you have use cases that involve very long text messages.
+- **Message Filtering**: Use `ignore_newsletters` and `ignore_forwards` to filter out less relevant messages and avoid unnecessary processing.
+
+These guidelines help optimize performance and ensure compliance with WhatsApp's messaging policies.
 
 ---
 
-### Best Practices
+## API Endpoints
 
-- **Validate** your API keys, tokens, and webhook URLs before deploying in production.
-- **Test** the webhook registration and sample message flow in a staging environment first.
-- Adjust `chunk_length` if you have use cases that involve very long text messages.
-- Use `ignore_newsletters` and `ignore_forwards` to filter out less relevant messages and avoid unnecessary processing.
+### Broadcast Message
+
+**Endpoint:** `/action/walker`
+**Method:** `POST`
+
+#### Parameters
+
+```json
+{
+   "agent_id": "<AGENT_ID>",
+   "walker": "broadcast_message",
+   "module_root": "actions.jivas.wppconnect_action",
+   "args": {
+      "message": {
+         "message_type": "TEXT|MEDIA|MULTI",
+         ...
+      },
+      "ignore_list": ["session_id_1", ...]
+   }
+}
+```
+
+---
+
+### Send Messages
+
+**Endpoint:** `/action/walker`
+**Method:** `POST`
+
+#### Parameters
+
+```json
+{
+   "agent_id": "<AGENT_ID>",
+   "walker": "send_messages",
+   "module_root": "actions.jivas.wppconnect_action",
+   "args": {
+      "messages": [
+         // Array of message objects
+      ],
+      "callback_url": "https://your-callback.url"
+   }
+}
+```
+
+#### Example Request
+
+```json
+{
+   "messages": [
+      {
+         "to": "session_id",
+         "message": {
+            "message_type": "TEXT",
+            "content": "Batch message"
+         }
+      }
+   ],
+   "callback_url": "https://example.com/status"
+}
+```
+
+#### Response
+
+Returns a job ID string for tracking.
+
+#### Callback Response
+
+Your callback will receive a JSON payload with the following structure automatically upon job completion:
+
+```json
+{
+   "status": "success|partial|error",
+   "job_id": "<UUID>",
+   "processed_count": 10,
+   "failed_count": 2,
+   "pending_count": 0
+}
+```
+
+---
+
+### Message Formats
+
+#### TEXT
+
+```json
+{
+   "message": {
+      "message_type": "TEXT",
+      "content": "Hello World"
+   }
+}
+```
+
+#### MEDIA
+
+```json
+{
+   "message": {
+      "message_type": "MEDIA",
+      "mime": "image/jpeg",
+      "content": "Check this!",
+      "data": {
+         "url": "https://example.com/image.jpg",
+         "file_name": "image.jpg"
+      }
+   }
+}
+```
+
+#### MULTI
+
+```json
+{
+   "message": {
+      "message_type": "MULTI",
+      "content": [
+         // Array of TEXT/MEDIA messages
+      ]
+   }
+}
+```
 
 ---
 

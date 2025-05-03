@@ -69,6 +69,8 @@ walker send_messages :interact_graph_walker: {
     #     ]
     # }
 
+    # returns a job id or None if the message is invalid
+
     has messages:list = [];
     has callback_url:str = '';
     has response:str = '';
