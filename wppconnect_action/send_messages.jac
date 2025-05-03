@@ -6,26 +6,26 @@ import:jac from jivas.agent.action.actions { Actions }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
 
 walker send_messages :interact_graph_walker: {
-    # accepts a collection of messages and a callback_url to be queued up for sending 
+    # accepts a collection of messages and a callback_url to be queued up for sending
     # the structure of the message items is as follows:
-    
+
     # TEXT
     # {
-    #     "messages": [ 
+    #     "messages": [
     #         {
     #             "to": "session_id",
     #             "message": {
     #                 "message_type": "TEXT",
     #                 "content": "message content"
     #             }
-    #         } 
+    #         }
     #     ],
     #     "callback_url": "https://example.com/callback"
     # }
-    
+
     # MEDIA
     # {
-    #     "messages": [ 
+    #     "messages": [
     #         {
     #             "to": "session_id",
     #             "message": {
@@ -36,14 +36,14 @@ walker send_messages :interact_graph_walker: {
     #                     "file_name": "image.jpg"
     #                 }
     #             }
-    #         } 
+    #         }
     #     ],
     #     "callback_url": "https://example.com/callback"
     # }
-    
+
     # MULTI
     # {
-    #     "messages": [ 
+    #     "messages": [
     #         {
     #             "to": "session_id",
     #             "message": {
@@ -63,7 +63,7 @@ walker send_messages :interact_graph_walker: {
     #                     }
     #                 ]
     #             }
-    #         } 
+    #         }
     #     ]
     # }
 
