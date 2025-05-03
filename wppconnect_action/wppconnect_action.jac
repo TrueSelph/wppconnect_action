@@ -230,11 +230,11 @@ node WPPConnectAction :Action: {
 
 
             } elif(message.get_type() == MessageType.MEDIA.value) {
-                mime_type = Utils.get_mime_type(mime_type=message.mime);
+                file_type = WPPConnectAPI.get_file_type(mime_type=message.mime);
                 content = self.sanitize_message(message = message.get_content());
-                if(mime_type['file_type'] in ["document", "video"]) {
+                if(file_type.get('file_type') in ["document", "video", "unknown"]) {
                     result = self.api().send_file(phone= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content);
-                } elif(mime_type['file_type'] == "image") {
+                } elif(file_type.get('file_type') == "image") {
                     result = self.api().send_image(phone=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content);
                 }
             } elif(message.get_type() == MessageType.MULTI.value) {
@@ -246,11 +246,11 @@ node WPPConnectAction :Action: {
                             result = self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
                         }
                     } elif(message_item.get_type() == MessageType.MEDIA.value) {
-                        mime_type = Utils.get_mime_type(mime_type=message_item.mime);
+                        file_type = WPPConnectAPI.get_file_type(mime_type=message_item.mime);
                         content = self.sanitize_message(message = message_item.get_content());
-                        if(mime_type['file_type'] in ["document", "video"]) {
+                        if(file_type.get('file_type') in ["document", "video", "unknown"]) {
                             result = self.api().send_file(phone= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
-                        }elif(mime_type['file_type'] == "image") {
+                        } elif(file_type.get('file_type') == "image") {
                             result = self.api().send_image(phone=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
                         }
                     }
@@ -289,10 +289,11 @@ node WPPConnectAction :Action: {
         #     "to": "session_id",
         #     "message": {
         #         "message_type": "MEDIA",
+        #         "mime": "image/jpeg",
         #         "content": "message content",
         #         "data": {
         #             "url": "https://example.com/image.jpg",
-        #             "file_name": "image.jpg"
+        #             "file_name": "image.jpeg"
         #         }
         #     }
         # } ]
@@ -308,6 +309,7 @@ node WPPConnectAction :Action: {
         #             },
         #             {
         #                 "message_type": "MEDIA",
+        #                 "mime": "image/jpeg",
         #                 "content": "message content",
         #                 "data": {
         #                     "url": "https://example.com/image.jpg",

@@ -26,6 +26,7 @@ walker broadcast_message :interact_graph_walker: {
     #     "message": {
     #         "message_type": "MEDIA",
     #         "content": "message content",
+    #         "mime": "image/jpeg",
     #         "data": {
     #             "url": "https://example.com/image.jpg",
     #             "file_name": "image.jpg"
@@ -46,6 +47,7 @@ walker broadcast_message :interact_graph_walker: {
     #             {
     #                 "message_type": "MEDIA",
     #                 "content": "message content",
+    #                 "mime": "image/jpeg",
     #                 "data": {
     #                     "url": "https://example.com/image.jpg",
     #                     "file_name": "image.jpg"

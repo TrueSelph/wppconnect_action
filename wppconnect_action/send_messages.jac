@@ -30,6 +30,7 @@ walker send_messages :interact_graph_walker: {
     #             "to": "session_id",
     #             "message": {
     #                 "message_type": "MEDIA",
+    #                 "mime": "image/jpeg",
     #                 "content": "message content",
     #                 "data": {
     #                     "url": "https://example.com/image.jpg",
@@ -55,6 +56,7 @@ walker send_messages :interact_graph_walker: {
     #                     },
     #                     {
     #                         "message_type": "MEDIA",
+    #                         "mime": "image/jpeg",
     #                         "content": "message content",
     #                         "data": {
     #                             "url": "https://example.com/image.jpg",
