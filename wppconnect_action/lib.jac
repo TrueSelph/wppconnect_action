@@ -6,3 +6,5 @@ include:jac logout_session;
 include:jac show_all_sessions;
 include:jac get_qrcode;
 include:jac get_session_status;
+include:jac send_messages;
+include:jac broadcast_message;
