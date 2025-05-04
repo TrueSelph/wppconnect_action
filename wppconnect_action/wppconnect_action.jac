@@ -34,7 +34,7 @@ node WPPConnectAction :Action: {
     has ignore_forwards:bool = True; # ignore forwarded messages
     # outbox settings
     has outbox_base_rate_per_minute:int = 20;  # WhatsApp API rate limit for sending messages
-    has outbox_send_interval:float = 0.5; # the interval (delay) in seconds between sending messages from the outbox
+    has outbox_send_interval:float = 1.0; # the interval (delay) in seconds between sending messages from the outbox
     has outbox_min_send_interval:float = 1.0; # the minumum interval (delay) in seconds between sending messages from the outbox
     has outbox_max_send_interval:float = 10.0; # the maximum interval (delay) in seconds between sending messages from the outbox
     has outbox_min_batch_size:int = 1; # the minimum batch size of messages to send from the outbox
