@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import mimetypes
 import os
 from typing import Dict, List, Optional
 
@@ -162,6 +163,125 @@ class WPPConnectAPI:
         except Exception as e:
             WPPConnectAPI.logger.error("Error parsing inbound message: %s", str(e))
             return {}
+
+    @staticmethod
+    def get_file_type(
+        file_path: Optional[str] = None,
+        url: Optional[str] = None,
+        mime_type: Optional[str] = None,
+    ) -> dict:
+        """
+        Determines the MIME type of a file or URL and categorizes it into common file types
+        (image, document, audio, video, unknown).
+        """
+
+        detected_mime_type = None
+
+        if file_path:
+            # Use mimetypes to guess MIME type based on file extension
+            detected_mime_type, _ = mimetypes.guess_type(file_path)
+        elif url:
+            # Make a HEAD request to get the Content-Type header
+            try:
+                response = requests.head(url, allow_redirects=True)
+                detected_mime_type = response.headers.get("Content-Type")
+            except requests.RequestException as e:
+                WPPConnectAPI.logger.error(f"Error making HEAD request: {e}")
+        else:
+            # Fallback to initial MIME type if provided
+            detected_mime_type = mime_type
+
+        # MIME type categories
+        mime_categories = {
+            "image": [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/bmp",
+                "image/webp",
+                "image/tiff",
+                "image/svg+xml",
+                "image/x-icon",
+                "image/heic",
+                "image/heif",
+                "image/x-raw",
+            ],
+            "document": [
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-powerpoint",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "text/plain",
+                "text/csv",
+                "text/html",
+                "application/rtf",
+                "application/x-tex",
+                "application/vnd.oasis.opendocument.text",
+                "application/vnd.oasis.opendocument.spreadsheet",
+                "application/epub+zip",
+                "application/x-mobipocket-ebook",
+                "application/x-fictionbook+xml",
+                "application/x-abiword",
+                "application/vnd.apple.pages",
+                "application/vnd.google-apps.document",
+            ],
+            "audio": [
+                "audio/mpeg",
+                "audio/wav",
+                "audio/ogg",
+                "audio/flac",
+                "audio/aac",
+                "audio/mp3",
+                "audio/webm",
+                "audio/amr",
+                "audio/midi",
+                "audio/x-m4a",
+                "audio/x-realaudio",
+                "audio/x-aiff",
+                "audio/x-wav",
+                "audio/x-matroska",
+            ],
+            "video": [
+                "video/mp4",
+                "video/mpeg",
+                "video/ogg",
+                "video/webm",
+                "video/quicktime",
+                "video/x-msvideo",
+                "video/x-matroska",
+                "video/x-flv",
+                "video/x-ms-wmv",
+                "video/3gpp",
+                "video/3gpp2",
+                "video/h264",
+                "video/h265",
+                "video/x-f4v",
+                "video/avi",
+            ],
+        }
+
+        # Handle cases where MIME type cannot be detected
+        if not detected_mime_type or detected_mime_type == "binary/octet-stream":
+            file_extension = ""
+            if file_path:
+                _, file_extension = os.path.splitext(file_path)
+            elif url:
+                _, file_extension = os.path.splitext(url)
+
+            detected_mime_type = mimetypes.types_map.get(
+                file_extension.lower(), "unknown/unknown"
+            )
+
+        # Categorize MIME type
+        for category, mime_list in mime_categories.items():
+            if detected_mime_type in mime_list:
+                return {"file_type": category, "mime": detected_mime_type}
+
+        # Default to "unknown" if no category matches
+        return {"file_type": "unknown", "mime": detected_mime_type}
 
     def register_session(
         self, webhook_url: str = "", wait_qr_code: bool = True
