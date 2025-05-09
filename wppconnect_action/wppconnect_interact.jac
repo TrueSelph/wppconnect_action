@@ -169,6 +169,7 @@ walker wppconnect_interact :interact_graph_walker: {
             # handle when user replies to a specific, previous message
             # the AI will need to have the quoted message as context along with the current message
             content = data['body'];
+            parent_message_id = "";
 
             # handle text-based quoted messages for now
             if( data.get("quoted_message") and (data.get("quoted_message", {}).get("type") == "chat") ) {
@@ -176,6 +177,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 quoted_message_directive = f"Use the quoted message as context when responding to my reply.  Quoted message: '{quoted_message}' Reply: '{content}'";
                 interaction_node = frame_node.add_interaction(utterance = content, channel = "whatsapp");
                 interaction_node.add_directive(quoted_message_directive);
+                parent_message_id = data.get("message_id");
             }
 
             message = (root spawn interact(
@@ -188,7 +190,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 data = [{"label": "whatsapp_chat", "meta": {}, "content": data}]
             )).message;
 
-            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
+            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
 
             # let's disable the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
@@ -303,7 +305,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             # handle reply
             parent_message_id = "";
-            if(data.get("parent_message")){
+            if(data.get("quoted_message")){
                 parent_message_id = data.get("message_id");
             }
 
@@ -331,7 +333,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             # handle reply
             parent_message_id = "";
-            if(data.get("parent_message")){
+            if(data.get("quoted_message")){
                 parent_message_id = data.get("message_id");
             }
 
