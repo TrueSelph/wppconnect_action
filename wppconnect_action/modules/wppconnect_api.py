@@ -114,7 +114,7 @@ class WPPConnectAPI:
                 "location": request.get("location", {}),
                 "fromMe": request.get("fromMe", False),
                 "isGroup": request.get("isGroupMsg", False),
-                "isForwarded": request.get("isForwarded", True),
+                "isForwarded": request.get("isForwarded", False),
                 "sender_name": request.get("notifyName", ""),
             }
 
