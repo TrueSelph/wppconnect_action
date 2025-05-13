@@ -234,7 +234,6 @@ walker wppconnect_interact :interact_graph_walker: {
 
                 # dereference response for convenience
                 has_tts_response = False;
-                parent_message_id = interact_object.message.get_meta('parent_message_id');
 
                 # check for TTS result in interact_object since tts flag was set to True
                 audio_url = interact_object.response.get('response', {}).get('audio_url');
@@ -251,7 +250,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
                 if(not has_tts_response) {
                     # fall back on text reply if no tts response generated
-                    action_node.send_message(session_id=frame_node.session_id, message=interact_object.message, is_group=data["isGroup"], parent_message_id=parent_message_id);
+                    action_node.send_message(session_id=frame_node.session_id, message=interact_object.message, is_group=data["isGroup"]);
                 }
 
             }
@@ -301,13 +300,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
             )).message;
 
-            # handle reply
-            parent_message_id = "";
-            if(data.get("parent_message")){
-                parent_message_id = data.get("message_id");
-            }
-
-            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
+            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
 
             # let's disable the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
@@ -329,13 +322,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 data = [{"label": "whatsapp_location", "meta": {}, "content": data}]
             )).message;
 
-            # handle reply
-            parent_message_id = "";
-            if(data.get("parent_message")){
-                parent_message_id = data.get("message_id");
-            }
-
-            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"], parent_message_id=parent_message_id);
+            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
         }
     }
 }
