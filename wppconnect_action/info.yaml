@@ -13,5 +13,5 @@ package:
   dependencies:
     jivas: '>=2.0.0-alpha.40'
     actions:
-      jivas/pulse_action: ">=0.0.2"
+      jivas/pulse_action: "~0.0.2"
 
