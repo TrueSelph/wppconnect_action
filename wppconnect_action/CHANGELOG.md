@@ -28,3 +28,7 @@
 
 ### 0.0.9
 - Added outbox scheduler facility, broadcast_message and send_messages endpoints
+
+### 0.0.10
+- Set isForwarded to false by default in parse_inbound_message
+- remove parent_message_id from handle_voicenote_message, handle_media_message and handle_location_message
