@@ -32,3 +32,10 @@
 ### 0.0.10
 - Set isForwarded to false by default in parse_inbound_message
 - remove parent_message_id from handle_voicenote_message, handle_media_message and handle_location_message
+
+### 0.0.11
+- Fixed whatsapp group ID bug which prevents agent from responding, even when tagged, when group IDs are used instead of phone number
+- Added syncing of Agent name to pushname
+- Added syncing of Agent Avatar to profile pic
+- Added device details when registered in action app
+- Added action app 5 second auto-refresh when awaiting QRcode scan

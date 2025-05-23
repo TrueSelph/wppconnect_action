@@ -1,5 +1,7 @@
 """This module contains the Streamlit app for the WhatsApp Connect action."""
 
+import time
+
 import streamlit as st
 from jvcli.client.lib.utils import call_action_walker_exec
 from jvcli.client.lib.widgets import app_controls, app_header, app_update_action
@@ -64,7 +66,27 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         # Main logic block follows your requirements
         if result.get("status") == "CONNECTED":
             # Step 2: Show connected + message + Logout button
-            st.success(result.get("message", "Session is connected!"), icon="✅")
+            message = result.get("message", "Session is connected!")
+            session = result.get("session")
+            device = result.get("device", {}).get("response", {})
+            pushname = device.get("pushname", "None provided")
+            phone_number = (
+                device.get("phoneNumber").split("@")[0]
+                if device.get("phoneNumber")
+                else ""
+            )
+
+            st.success(message, icon="✅")
+            st.markdown(
+                f"""
+                <div style="margin-top: 1em;">
+                    <b>Session:</b> <code>{session}</code><br>
+                    <b>Push Name:</b> <code>{pushname}</code><br>
+                    <b>Phone Number:</b> <code>{phone_number}</code>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             st.markdown("<br>", unsafe_allow_html=True)
 
             # Center the Logout button
@@ -112,6 +134,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     with st.spinner("Closing session..."):
                         close_wppconnect()
                         st.rerun()
+
+                # Auto-refresh every 5 seconds
+                st.rerun = getattr(st, "rerun", None)
+                if st.rerun:
+                    time.sleep(5)
+                    get_wppconnect_status()
+                    st.rerun()
 
         else:
             qrcode = result.get("qrcode", "")
@@ -167,3 +196,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         with st.spinner("Closing session..."):
                             close_wppconnect()
                             st.rerun()
+
+                # Auto-refresh every 5 seconds
+                st.rerun = getattr(st, "rerun", None)
+                if st.rerun:
+                    time.sleep(5)
+                    get_wppconnect_status()
+                    st.rerun()

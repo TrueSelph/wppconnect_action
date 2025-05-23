@@ -761,8 +761,10 @@ class WPPConnectAPI:
         data = {"name": name, "participants": participants}
         return self.send_rest_request("create-group", data=data)
 
-    def group_info(self, group_id: str) -> dict:
+    def group_members(self, group_id: str) -> dict:
         """GET /group-members/{group_id}"""
+        if not group_id:
+            return {}
         return self.send_rest_request(f"group-members/{group_id}", method="GET")
 
     def leave_group(self, group_id: str) -> dict:
@@ -1003,10 +1005,8 @@ class WPPConnectAPI:
         data = {"status": status}
         return self.send_rest_request("profile-status", data=data)
 
-    def set_profile_pic(self, file_path: str) -> dict:
+    def set_profile_pic(self, file_data: bytes) -> dict:
         """POST /set-profile-pic"""
-        with open(file_path, "rb") as image_file:
-            file_data = image_file.read()
         url = f"{self.api_url}/{self.session}/set-profile-pic"
         headers = {
             "Authorization": f"Bearer {self.token}",
