@@ -1,5 +1,6 @@
 import:py logging;
 import:py os;
+import:py re;
 import:py uuid;
 import:py base64;
 import:py mimetypes;
@@ -138,21 +139,45 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can is_directed_message(data:dict) -> bool {
+    can is_directed_message(action_node:Action, data:dict) -> bool {
         # interprets the data to determine whether it's a direct group reply or valid direct chat with content
 
-        if(data['author']) {
-            # this means we are in a group..only respond if the message starts with @[agent name]
-            callout = ( ("@"+data['receiver']).replace("@c.us", "") ).lower();
-            callout_index = ((data['body']).lower()).find(callout);
-            if( callout_index == -1 ) {
-                # then we ignore unless they are directly calling us out in the group...
+        if(data.get('isGroup')) {
+            # first attempt efficient method of determining whether we have a tagged message
+
+            # Look for @[receiver code before @] in the body
+            ::py::
+            match = re.search( r"@(\d+)", (data['body'].strip()) )
+            ::py::
+
+            if not match {
                 return False;
-            } else {
-                # remove the callout from the message...
-                data['body'] = (data['body']).replace(callout, "");
+            }
+
+            tagged_id = match.group(1);
+            receiver = data.get('receiver').split('@')[0] if data.get('receiver') else '';
+            # Remove all occurrences of the pattern in the body (case-insensitive)
+            data['body'] = re.sub(tagged_id, "", data['body'], flags=re.IGNORECASE).strip();
+
+            if(tagged_id == receiver) {
                 return True;
             }
+
+            # if we're here, it means we have those group member ID scenarios and will have to search by group ID
+            group_id = data.get('sender');
+            result = action_node.api().group_members(group_id);
+            if result and result.get('status') == 'success' {
+                group_members = result.get('response', {});
+                # now we search
+                for item in group_members {
+                    if(item.get('id', {}).get('user') == tagged_id and item.get('formattedName') == 'You') {
+                        return True;
+                    }
+                }
+            }
+
+            return False;
+
         }
 
         return True;
@@ -160,7 +185,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
     can handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
 
-        if(self.is_directed_message(data)) {
+        if(self.is_directed_message(action_node, data)) {
             # only respond if we have a message and if we are messaged with @ in groups
 
             # at this point we validated that it warrants a response, let's issue the typing
@@ -262,7 +287,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
     can handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
-        if(self.is_directed_message(data)) {
+        if(self.is_directed_message(action_node, data)) {
 
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
@@ -310,7 +335,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
     can handle_location_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
-        if(self.is_directed_message(data)) {
+        if(self.is_directed_message(action_node, data)) {
 
             message = (root spawn interact(
                 utterance = "The user sent their location.",

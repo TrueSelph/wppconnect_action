@@ -2,6 +2,7 @@ import:py os;
 import:py uuid;
 import:py logging;
 import:py traceback;
+import:py base64;
 import:py random;
 import:py from datetime { datetime }
 import:py from typing { Union }
@@ -32,6 +33,8 @@ node WPPConnectAction :Action: {
     has use_pushname:bool = True; # use the WhatsApp push name as the user name
     has ignore_newsletters:bool = True; # ignore newsletters
     has ignore_forwards:bool = True; # ignore forwarded messages
+    has sync_pushname:bool = True; # set Agent name as pushname
+    has sync_avatar:bool = True; # set Agent avatar (if present and set) as profile pic
     # outbox settings
     has outbox_base_rate_per_minute:int = 20;  # WhatsApp API rate limit for sending messages
     has outbox_send_interval:float = 1.0; # the interval (delay) in seconds between sending messages from the outbox
@@ -191,6 +194,19 @@ node WPPConnectAction :Action: {
                     self.token = result.get('token');
                     # remove the token from the payload now that we've saved it
                     del result['token'];
+                }
+
+                # attempt to set username
+                if(self.sync_pushname) {
+                    self.api().change_username(self.get_agent().name);
+                }
+
+                # if there is an avatar set this as well
+                if( self.sync_avatar and (avatar_action := self.get_agent().get_action('AvatarAction')) ) {
+                    if avatar_base64 := avatar_action.get_avatar_image(with_prefix=False) {
+                        avatar_bytes = base64.b64decode(avatar_base64);
+                        self.api().set_profile_pic(file_data=avatar_bytes);
+                    }
                 }
             }
 
@@ -595,7 +611,7 @@ node WPPConnectAction :Action: {
         }
 
         if job_id not in self.outbox {
-            self.logger.warning(f"Job {job_id} does not exist - creating new structure");
+            self.logger.warning(f"Creating new job {job_id}...");
             self.outbox[job_id] = self.create_job_structure();
         }
 
