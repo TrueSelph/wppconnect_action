@@ -6,6 +6,7 @@ import mimetypes
 import os
 from typing import Dict, List, Optional
 
+import filetype
 import requests
 from dotenv import load_dotenv
 
@@ -910,34 +911,33 @@ class WPPConnectAPI:
     @staticmethod
     def file_url_to_base64(file_url: str, force_prefix: bool = True) -> Optional[str]:
         """
-        Downloads file from any web-URL and encodes contents as base64.
-        Does not store the file to any persistent file or storage backend.
+        Downloads a file from a URL and returns its base64-encoded content with MIME type.
+
+        Args:
+            file_url (str): URL of the file to download.
+            force_prefix (bool): If True, prepends 'data:{mime};base64,' to the result.
+
+        Returns:
+            Optional[str]: Base64 string with or without MIME prefix, or None if download fails.
         """
         try:
-            response = requests.get(file_url)
+            response = requests.get(file_url, timeout=15)
             response.raise_for_status()
+            content = response.content
 
-            # Get MIME type from response header
-            content_type = response.headers.get(
-                "Content-Type", "application/octet-stream"
-            )
+            # Use filetype to guess MIME type from content
+            kind = filetype.guess(content)
+            content_type = kind.mime if kind else "application/octet-stream"
 
             # Base64 encode the file content
-            encoded = base64.b64encode(response.content).decode("utf-8")
+            encoded = base64.b64encode(content).decode("utf-8")
 
             if force_prefix:
-                # Prepare prefix
-                prefix = f"data:{content_type};base64,"
-                # If it's already a data URL, return as-is
-                if encoded.startswith(prefix):
-                    return encoded
-                # Otherwise, prepend the prefix
-                return prefix + encoded
-
+                return f"data:{content_type};base64,{encoded}"
             return encoded
 
         except Exception as e:
-            WPPConnectAPI.logger.error(f"Error downloading or encoding file: {e}")
+            WPPConnectAPI.logger.error(f"[ERROR] Failed to fetch or encode file: {e}")
             return None
 
     # 7. Utility & info

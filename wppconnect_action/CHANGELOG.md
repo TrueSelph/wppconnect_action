@@ -39,3 +39,6 @@
 - Added syncing of Agent Avatar to profile pic
 - Added device details when registered in action app
 - Added action app 5 second auto-refresh when awaiting QRcode scan
+
+### 0.0.12
+- Updated the `file_url_to_base64` function to use filetype to determine MIME type
