@@ -157,6 +157,8 @@ class WPPConnectAPI:
             elif payload["event_type"] == "onpollresponse":
                 payload["poll_id"] = request.get("msgId", {}).get("_serialized", "")
                 payload["selectedOptions"] = request.get("selectedOptions", "")
+                payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
+                payload["message_type"] = "poll"
 
             return payload
 
@@ -261,6 +263,14 @@ class WPPConnectAPI:
                 "video/x-f4v",
                 "video/avi",
             ],
+            "poll": [
+                "application/poll",               # Generic and clean
+                "application/vnd.jivas.poll",     # Vendor-specific to your framework
+                "poll/message",                   # Custom subtype under a new "poll" type
+                "application/x-poll-data",        # Legacy-style custom type
+                "application/jivas-poll+json" ,   # Jivas framework + structured data format
+                "jivas/poll"                      # Jivas framework + poll
+            ]
         }
 
         # Handle cases where MIME type cannot be detected

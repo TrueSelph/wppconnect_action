@@ -43,6 +43,8 @@ node WPPConnectAction :Action: {
     has outbox_min_batch_size:int = 1; # the minimum batch size of messages to send from the outbox
     has outbox_max_batch_size:int = 10; # the maximum batch size of messages to send from the outbox
     has outbox:dict = {}; # outbox for outgoing mass messages
+    # poll settings
+    has poll_manager_action:str = "PollManagerInteractAction"; # the label of the poll manager action to use for polls
 
 
     can on_enable() {
@@ -249,7 +251,26 @@ node WPPConnectAction :Action: {
             } elif(message.get_type() == MessageType.MEDIA.value) {
                 file_type = WPPConnectAPI.get_file_type(mime_type=message.mime);
                 content = self.sanitize_message(message = message.get_content());
-                if(file_type.get('file_type') in ["document", "video", "unknown"]) {
+                if(file_type.get('file_type') == "poll"){
+                    result = self.api().send_poll_message(phone=session_id, name=message.data.get('name'), choices=message.data.get('choices'), options=message.data.get('options'), is_group=is_group);
+
+                    # update with poll manager action
+                    if((poll_manager_action := self.get_agent().get_action(action_label=self.poll_manager_action)) and (result["status"] == "success")) {
+                        # set options
+                        poll_options = message.data.get('options', None);
+                        poll_options["duration_minutes"] = message.data.get('duration_minutes', None); # default to None if not set
+
+                        poll_group_id = poll_manager_action.register_dispatched_poll_instance(
+                            user_session_id=session_id,
+                            poll_definition={"name": message.data.get('name'), "choices": message.data.get('choices'), "options": poll_options}, # {"name", "choices", "options": {"selectableCount", "duration_minutes"} }
+                            whatsapp_poll_id=result["response"][0]["id"], # ID of the WA message containing the poll
+                            preferred_internal_id=message.data.get('id') if message.data.get('id') else message.data.get('preferred_internal_id'), # Use the poll id as the preferred internal ID else default to preferred_internal_id
+                        );
+
+                        result["internal_poll_group_id"] = poll_group_id; # add the poll group id to the result
+                    }
+
+                }elif(file_type.get('file_type') in ["document", "video", "unknown"]) {
                     result = self.api().send_file(phone= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content);
                 } elif(file_type.get('file_type') == "image") {
                     result = self.api().send_image(phone=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content);
@@ -265,7 +286,25 @@ node WPPConnectAction :Action: {
                     } elif(message_item.get_type() == MessageType.MEDIA.value) {
                         file_type = WPPConnectAPI.get_file_type(mime_type=message_item.mime);
                         content = self.sanitize_message(message = message_item.get_content());
-                        if(file_type.get('file_type') in ["document", "video", "unknown"]) {
+                        if(file_type.get('file_type') == "poll"){
+                            result = self.api().send_poll_message(phone=session_id, name=message_item.data.get('name'), choices=message_item.data.get('choices'), options=message_item.data.get('options'), is_group=is_group);
+
+                            # update with poll manager action
+                            if((poll_manager_action := self.get_agent().get_action(action_label=self.poll_manager_action)) and (result["status"] == "success")) {
+                                # set options
+                                poll_options = message_item.data.get('options', None);
+                                poll_options["duration_minutes"] = message_item.data.get('duration_minutes', None); # default to 60 minutes if not set
+
+                                poll_group_id = poll_manager_action.register_dispatched_poll_instance(
+                                    user_session_id=session_id,
+                                    poll_definition={"name": message_item.data.get('name'), "choices": message_item.data.get('choices'), "options": poll_options}, # {"name", "choices", "options": {"selectableCount", "duration_minutes"} }
+                                    whatsapp_poll_id=result["response"][0]["id"], # ID of the WA message containing the poll
+                                    preferred_internal_id=message_item.data.get('id') if message_item.data.get('id') else message_item.data.get('preferred_internal_id'), # Use the poll id as the preferred internal ID if any else default to preferred_internal_id
+                                );
+
+                                result["internal_poll_group_id"] = poll_group_id; # add the poll group id to the result
+                            }
+                        }elif(file_type.get('file_type') in ["document", "video", "unknown"]) {
                             result = self.api().send_file(phone= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
                         } elif(file_type.get('file_type') == "image") {
                             result = self.api().send_image(phone=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
@@ -552,11 +591,21 @@ node WPPConnectAction :Action: {
 
     can validate_media_message(message: dict, index: int) -> bool {
         required = {'mime', 'content', 'data'};
+        file_type = WPPConnectAPI.get_file_type(mime_type=message.get('mime', 'unknown'));
+
+        if(file_type.get('file_type') == "poll") {
+            required.remove('content');
+        }
+
         missing = required - message.keys();
 
         if missing {
             self.logger.error(f"Item {index}: MEDIA message missing {missing}");
             return False;
+        }
+
+        if (file_type.get('file_type') == "poll" and all([key in message.get('data', {}) for key in ['name', 'choices', 'options']])) {
+            return True;
         }
 
         if 'url' not in message['data'] {

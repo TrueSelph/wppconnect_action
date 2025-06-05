@@ -37,7 +37,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
         # parse data if we've gotten this far..
         data = WPPConnectAPI.parse_inbound_message(request = self.params);
-
+        self.logger.warning(f"Parsed data: {data}");
         if(not data) {
             Jac.get_context().status = 200;
             disengage;
@@ -119,6 +119,17 @@ walker wppconnect_interact :interact_graph_walker: {
             # handle voicenote requests
             if(data['message_type'] in ['audio', 'document', 'image', 'video']) {
                 self.handle_media_message(
+                    data = data,
+                    agent_node = here,
+                    frame_node = frame_node,
+                    action_node = action_node
+                );
+            }
+
+
+            # handle poll requests
+            if(data['message_type'] in ['poll']) {
+                self.handle_poll_message(
                     data = data,
                     agent_node = here,
                     frame_node = frame_node,
@@ -332,6 +343,29 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
+    can handle_poll_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+        # add document resource to data node in interaction
+        if(self.is_directed_message(action_node, data)) {
+
+            # at this point we validated that it warrants a response, let's issue the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
+
+            message = (root spawn interact(
+                utterance = "Poll Response received.",
+                agent_id = agent_node.id,
+                session_id = frame_node.session_id,
+                verbose = False,
+                reporting = False,
+                channel = "whatsapp",
+                data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
+            )).message;
+
+            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
+
+            # let's disable the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
+        }
+    }
 
     can handle_location_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
