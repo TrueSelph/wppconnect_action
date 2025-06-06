@@ -14,4 +14,6 @@ package:
     jivas: '>=2.0.0-alpha.48'
     actions:
       jivas/pulse_action: "~0.0.2"
+    pip:
+      filetype: 1.2.0
 
