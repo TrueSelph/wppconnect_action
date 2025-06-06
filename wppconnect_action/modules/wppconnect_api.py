@@ -265,13 +265,13 @@ class WPPConnectAPI:
                 "video/avi",
             ],
             "poll": [
-                "application/poll",               # Generic and clean
-                "application/vnd.jivas.poll",     # Vendor-specific to your framework
-                "poll/message",                   # Custom subtype under a new "poll" type
-                "application/x-poll-data",        # Legacy-style custom type
-                "application/jivas-poll+json" ,   # Jivas framework + structured data format
-                "jivas/poll"                      # Jivas framework + poll
-            ]
+                "application/poll",  # Generic and clean
+                "application/vnd.jivas.poll",  # Vendor-specific to your framework
+                "poll/message",  # Custom subtype under a new "poll" type
+                "application/x-poll-data",  # Legacy-style custom type
+                "application/jivas-poll+json",  # Jivas framework + structured data format
+                "jivas/poll",  # Jivas framework + poll
+            ],
         }
 
         # Handle cases where MIME type cannot be detected
@@ -949,7 +949,7 @@ class WPPConnectAPI:
         except Exception as e:
             WPPConnectAPI.logger.error(f"[ERROR] Failed to fetch or encode file: {e}")
             return None
-        
+
     # 7. Utility & info
 
     def device_battery(self) -> dict:
