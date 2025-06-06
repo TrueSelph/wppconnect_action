@@ -37,7 +37,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
         # parse data if we've gotten this far..
         data = WPPConnectAPI.parse_inbound_message(request = self.params);
-        self.logger.warning(f"Parsed data: {data}");
+
         if(not data) {
             Jac.get_context().status = 200;
             disengage;
