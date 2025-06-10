@@ -12,7 +12,7 @@ import:jac from jivas.agent.memory.frame { Frame }
 import:jac from jivas.agent.action.action { Action }
 import:jac from jivas.agent.action.interact { interact }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
-import:py from jvserve.lib.file_interface { file_interface }
+
 
 walker wppconnect_interact :interact_graph_walker: {
     # called via a webhook whenever there are verification requests or inbound messages
@@ -313,10 +313,10 @@ walker wppconnect_interact :interact_graph_walker: {
             output_file_path = f"wpp/{output_filename}";
 
             # save document to the file system
-            file_interface.save_file(output_file_path, file_data);
+            action_node.save_file(output_file_path, file_data);
 
             # retrieve file url
-            file_url = file_interface.get_file_url(output_file_path);
+            file_url = action_node.get_file_url(output_file_path);
 
             # if the file url is not available, set the source to the filename
             if not file_url {
