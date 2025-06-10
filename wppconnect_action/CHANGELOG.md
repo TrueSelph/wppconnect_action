@@ -42,11 +42,6 @@
 
 ### 0.0.12
 - Updated the `file_url_to_base64` function to use filetype to determine MIME type
-
-## 0.0.13
-
-### Added
-
 - **Poll Dispatch Capability:**
   - The `send_message` ability can now dispatch polls via the WPPConnect API.
   - This is triggered when an `InteractionMessage` with `message.mime == "jivas/poll"` (or `message_item.mime` for `MULTI` messages) is passed.
@@ -94,3 +89,12 @@ poll_im.data = {
 
 # Then call:
 # wpp_action_node.send_message(session_id="user_whatsapp_id", message=poll_im)
+```
+
+## 0.0.13
+
+**Breaking Changes:**
+- Removed deprecated file interface implementation
+
+**Improvements:**
+- Upgraded to new file interface implementation with enhanced performance and reliability
