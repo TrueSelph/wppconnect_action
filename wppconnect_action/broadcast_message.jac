@@ -22,6 +22,9 @@ walker broadcast_message :interact_graph_walker: {
     # }
 
     # MEDIA
+    # This is for sending media files like images, videos, polls etc.
+    #
+    # Example structure for sending an image:
     # {
     #     "message": {
     #         "message_type": "MEDIA",
@@ -30,6 +33,22 @@ walker broadcast_message :interact_graph_walker: {
     #         "data": {
     #             "url": "https://example.com/image.jpg",
     #             "file_name": "image.jpg"
+    #         }
+    #     },
+    #     "ignore_list": []
+    # }
+    #
+    # Example structure for sending a poll:
+    # {
+    #     "message": {
+    #         "message_type": "MEDIA",
+    #         "mime": "jivas/poll",
+    #         "data": {
+    #             "name": "What's your favorite color?",
+    #             "choices": ["Red", "Green", "Blue"],
+    #             "options": {"selectableCount": 1}, 
+    #             "duration_minutes": 1440, 
+    #             "id": "color_poll_q1"
     #         }
     #     },
     #     "ignore_list": []
