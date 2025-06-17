@@ -98,3 +98,7 @@ poll_im.data = {
 
 **Improvements:**
 - Upgraded to new file interface implementation with enhanced performance and reliability
+
+## 0.0.14
+
+- Updated documentation to include the details on how to send polls.
