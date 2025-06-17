@@ -56,8 +56,8 @@ walker send_messages :interact_graph_walker: {
     #                 "data": {
     #                     "name": "What's your favorite color?",
     #                     "choices": ["Red", "Green", "Blue"],
-    #                     "options": {"selectableCount": 1}, 
-    #                     "duration_minutes": 1440, 
+    #                     "options": {"selectableCount": 1},
+    #                     "duration_minutes": 1440,
     #                     "id": "color_poll_q1"
     #                 }
     #             }
@@ -65,7 +65,7 @@ walker send_messages :interact_graph_walker: {
     #     ],
     #     "callback_url": "https://example.com/callback"
     # }
-    
+
     # MULTI
     # {
     #     "messages": [

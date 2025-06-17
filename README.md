@@ -217,8 +217,8 @@ Your callback will receive a JSON payload with the following structure automatic
       "data": {
          "name": "What's your favorite color?",
          "choices": ["Red", "Green", "Blue"],
-         "options": {"selectableCount": 1}, 
-         "duration_minutes": 1440, 
+         "options": {"selectableCount": 1},
+         "duration_minutes": 1440,
          "id": "color_poll_q1"
       }
    }
