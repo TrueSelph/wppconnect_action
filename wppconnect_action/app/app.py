@@ -1,8 +1,10 @@
 """This module contains the Streamlit app for the WhatsApp Connect action."""
 
+import json
 import time
 
 import streamlit as st
+import yaml
 from jvcli.client.lib.utils import call_action_walker_exec
 from jvcli.client.lib.widgets import app_controls, app_header, app_update_action
 from streamlit_router import StreamlitRouter
@@ -24,6 +26,102 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         app_controls(agent_id, action_id)
         # Add update button to apply changes
         app_update_action(agent_id, action_id)
+
+    with st.expander("Export Outbox", False):
+        if st.button(
+            "Export Outbox",
+            key=f"{model_key}_btn_export_outbox",
+            disabled=(not agent_id),
+        ):
+            # Call the function to purge
+            if result := call_action_walker_exec(
+                agent_id, module_root, "export_outbox", {}
+            ):
+                if result:
+                    result = json.dumps(result, indent=2)
+                    st.download_button(
+                        label="Download Exported Outbox",
+                        data=result,
+                        file_name="exported_outbox.json",
+                        mime="application/json",
+                    )
+                    st.success("Export outbox successfully")
+                    st.json(result)
+            else:
+                st.error(
+                    "Failed to export putbox. Ensure that there is something to export"
+                )
+
+    with st.expander("Import Outbox", False):
+        outbox_source = st.radio(
+            "Choose data source:",
+            ("Text input", "Upload file"),
+            key=f"{model_key}_outbox_source",
+        )
+
+        raw_text_input = ""
+        uploaded_file = None
+        data_to_import = None
+
+        if outbox_source == "Text input":
+            raw_text_input = st.text_area(
+                "Outbox in YAML or JSON",
+                value="",
+                height=170,
+                key=f"{model_key}_outbox_data",
+            )
+
+        if outbox_source == "Upload file":
+            uploaded_file = st.file_uploader(
+                "Upload file (YAML or JSON)",
+                type=["yaml", "json"],
+                key=f"{model_key}_agent_outbox_upload",
+            )
+
+        purge_collection = st.checkbox(
+            "Purge Collection", value=False, key=f"{model_key}_purge_collection"
+        )
+
+        if st.button(
+            "Import Outbox",
+            key=f"{model_key}_btn_import_outbox",
+            disabled=(not agent_id),
+        ):
+            try:
+                if outbox_source == "Upload file" and uploaded_file:
+                    file_content = uploaded_file.read().decode("utf-8")
+                    if uploaded_file.type == "application/json":
+                        data_to_import = json.loads(file_content)
+                    else:
+                        data_to_import = yaml.safe_load(file_content)
+
+                elif outbox_source == "Text input" and raw_text_input.strip():
+                    # Try JSON first, fall back to YAML
+                    try:
+                        data_to_import = json.loads(raw_text_input)
+                    except json.JSONDecodeError:
+                        data_to_import = yaml.safe_load(raw_text_input)
+
+                if data_to_import is None:
+                    st.error("No valid outbox data provided.")
+                else:
+                    outbox = {}
+                    outbox = data_to_import.get("outbox", data_to_import)
+
+                    result = call_action_walker_exec(
+                        agent_id,
+                        module_root,
+                        "import_outbox",
+                        {"outbox": outbox, "purge_collection": purge_collection},
+                    )
+                    if result:
+                        st.success("Import outbox successfully")
+                    else:
+                        st.error(
+                            "Failed to import outbox. Ensure that there is something to import."
+                        )
+            except Exception as e:
+                st.error(f"Import failed: {e}")
 
     # Unique keys in session state for button control and data
     session_payload_key = "wppconnect_payload"
