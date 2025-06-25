@@ -5,5 +5,4 @@ enum JobStatus {
     PENDING = 'PENDING',
     PROCESSED = 'PROCESSED',
     FAILED = 'FAILED',
-    NONE = 'NONE',
 }

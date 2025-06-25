@@ -37,7 +37,6 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             if result := call_action_walker_exec(
                 agent_id, module_root, "export_outbox", {}
             ):
-                st.success("Export outbox successfully")
                 if result:
                     result = json.dumps(result, indent=2)
                     st.download_button(
@@ -46,16 +45,18 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         file_name="exported_outbox.json",
                         mime="application/json",
                     )
+                    st.success("Export outbox successfully")
+                    st.json(result)
             else:
                 st.error(
                     "Failed to export putbox. Ensure that there is something to export"
                 )
 
-    with st.expander("Import Permissions", False):
+    with st.expander("Import Outbox", False):
         outbox_source = st.radio(
             "Choose data source:",
             ("Text input", "Upload file"),
-            key=f"{model_key}_permissions_source",
+            key=f"{model_key}_outbox_source",
         )
 
         raw_text_input = ""
@@ -64,17 +65,17 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         if outbox_source == "Text input":
             raw_text_input = st.text_area(
-                "Permissions in YAML or JSON",
+                "Outbox in YAML or JSON",
                 value="",
                 height=170,
-                key=f"{model_key}_permissions_data",
+                key=f"{model_key}_outbox_data",
             )
 
         if outbox_source == "Upload file":
             uploaded_file = st.file_uploader(
                 "Upload file (YAML or JSON)",
                 type=["yaml", "json"],
-                key=f"{model_key}_agent_permissions_upload",
+                key=f"{model_key}_agent_outbox_upload",
             )
 
         purge_collection = st.checkbox(

@@ -7,5 +7,5 @@ node Job :GraphNode: {
     has added_at:str = "";
     has message:dict = {};
     has session_id:str = "";
-    has status:JobStatus = JobStatus.NONE;
+    has status:JobStatus = JobStatus.PENDING;
 }

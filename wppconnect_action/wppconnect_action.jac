@@ -745,7 +745,7 @@ node WPPConnectAction :Action: {
         return (collection spawn _get_jobs(batch_id=batch_id)).jobs;
     }
 
-    can update_job_collection(status: str, job_id:str = "", batch_id:str = "", success_rate:float = 0.0) -> Job {
+    can update_job_collection(status: str="", job_id:str = "", batch_id:str = "", success_rate:float = 0.0) -> Job {
         collection = self.get_collection();
         return (collection spawn _update_job_collection(status=status, job_id=job_id, batch_id=batch_id, success_rate=success_rate));
     }
@@ -853,15 +853,16 @@ walker _add_job_collection {
     }
 
     can on_jobs with Jobs entry {
+        date_now = datetime.now().isoformat();
         self.job = Job(id=self.job_id, session_id=self.session_id, added_at=date_now, message=self.message, status=JobStatus.PENDING);
         here ++> self.job;
         here.total += 1;
-        here.created_at = datetime.now().isoformat();
+        here.created_at = date_now;
     }
 }
 
 walker _update_job_collection {
-    has status:JobStatus = JobStatus.NONE;
+    has status:str = "";
     has batch_id:str = "";
     has job_id:str = "";
     has success_rate:float = 0.0;
@@ -885,7 +886,7 @@ walker _update_job_collection {
             }
         }
 
-        if self.status != JobStatus.NONE {
+        if self.status in JobStatus {
             visit [-->](`?Job)(?id == self.job_id);
         }
     }
