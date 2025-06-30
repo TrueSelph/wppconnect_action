@@ -1,11 +1,16 @@
-import:py from jivas.agent.modules.agentlib.utils { Utils }
 import:jac from jivas.agent.core.graph_node { GraphNode }
-import:jac from actions.jivas.wppconnect_action.job_status { JobStatus }
+import:jac from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
+
 
 node Job :GraphNode: {
-    has id:str = "";
-    has added_at:str = "";
-    has message:dict = {};
-    has session_id:str = "";
-    has status:JobStatus = JobStatus.PENDING;
+    has job_id:str = "";
+    has callback_url:str = "";
+    has created_at:str = "";
+    has total:int = 0;
+    has success_rate:float = 0.0;
+
+    can get_job() -> list {
+        # retrieves a list of outbox items
+        return [-->](`?OutboxItem);
+    }
 }

@@ -2,7 +2,9 @@
 
 import json
 import time
+from contextlib import suppress
 
+import pandas as pd
 import streamlit as st
 import yaml
 from jvcli.client.lib.utils import call_action_walker_exec
@@ -122,6 +124,67 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         )
             except Exception as e:
                 st.error(f"Import failed: {e}")
+
+    with st.expander("Purge Outbox", False):
+        item_id = st.text_input(
+            "Item ID to purge",
+            value="",
+            key=f"{model_key}_item_id",
+        )
+
+        if item_id:
+            button_text = "Yes, Purge outbox item"
+            message = "Outbox item purged successfully"
+            confirm_message = "Are you sure you want to purge the outbox item? This action cannot be undone."
+        else:
+            button_text = "Yes, Purge outbox"
+            message = "Outbox purged successfully"
+            confirm_message = "Are you sure you want to purge the outbox? This action cannot be undone."
+
+        # Step 1: Trigger confirmation
+        if st.button("Purge", key=f"{model_key}_btn_purge_outbox_item"):
+            st.session_state.confirm_purge_collection = True
+            st.session_state.purge_outbox_item = None  # Clear any previous result
+
+        # Step 2: Handle confirmation prompt
+        if st.session_state.get("confirm_purge_collection", False):
+            st.warning(
+                confirm_message,
+                icon="⚠️",
+            )
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button(button_text):
+                    purge_outbox_item = call_action_walker_exec(
+                        agent_id,
+                        module_root,
+                        "purge_outbox",
+                        {"item_id": item_id},
+                    )
+                    st.session_state.purge_outbox_item = purge_outbox_item
+                    st.session_state.confirm_purge_collection = False
+
+            with col2:
+                if st.button("no, cancel"):
+                    st.session_state.confirm_purge_collection = False
+                    st.session_state.purge_outbox_item = None
+                    st.rerun()
+
+        # Step 3: Show result *outside* confirmation
+        purge_outbox_item = st.session_state.get("purge_outbox_item")
+        if purge_outbox_item:
+            st.success(message)
+            st.session_state.purge_outbox_item = None  # Reset after showing
+            time.sleep(2)
+            st.rerun()
+        elif purge_outbox_item in [False, []]:
+            st.error(
+                "Failed to purge outbox. Ensure that there is something to purge or check functionality"
+            )
+            st.session_state.purge_outbox_item = None  # Reset after showing
+            time.sleep(2)
+            st.rerun()
 
     # Unique keys in session state for button control and data
     session_payload_key = "wppconnect_payload"
@@ -301,3 +364,210 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     time.sleep(5)
                     get_wppconnect_status()
                     st.rerun()
+
+    with st.expander("Outbox", True):
+        # Initialize session state variables for pagination
+        if "current_page" not in st.session_state:
+            st.session_state.current_page = 1
+        if "per_page" not in st.session_state:
+            st.session_state.per_page = 10
+        if "job_id" not in st.session_state:
+            st.session_state.job_id = []
+        if "status" not in st.session_state:
+            st.session_state.status = []
+
+        # Fetch documents with pagination parameters
+        args = {
+            "page": st.session_state.current_page,
+            "limit": st.session_state.per_page,
+            "filtered_job_id": st.session_state.job_id,
+            "filtered_status": st.session_state.status,
+        }
+
+        data = call_action_walker_exec(agent_id, module_root, "list_outbox_items", args)
+        if data:
+
+            # Use the total_items from the API response, not the length of current items
+            total_items = data.get("total_items", 0)
+            total_pages = data.get("total_pages", 1)
+
+            df = prepare_data(data["items"])
+
+            # Combine date and time columns if they exist
+            if "date" in df.columns and "time" in df.columns:
+                df["datetime"] = df["date"].astype(str) + " " + df["time"].astype(str)
+                # Convert to datetime if neededpass
+                with suppress(Exception):
+                    df["datetime"] = pd.to_datetime(df["datetime"])
+
+            if not df.empty:
+                # Create columns for filters
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    prev_status_filter = st.session_state.status
+                    # Status filter - empty by default shows all
+                    status_filter = st.multiselect(
+                        "Filter by status",
+                        options=sorted(["FAILED", "PENDING", "PROCESSED"]),
+                        default=(
+                            st.session_state.status if st.session_state.status else []
+                        ),
+                    )
+                    st.session_state.status = status_filter
+
+                    # If status changed, trigger a rerun
+                    if status_filter != prev_status_filter:
+                        st.rerun()
+
+                with col2:
+                    prev_batch_filter = st.session_state.job_id
+                    # Batch ID filter - empty by default shows all
+                    batch_filter = st.multiselect(
+                        "Filter by Job ID",
+                        options=sorted(data["jobs"]),
+                        default=(
+                            st.session_state.job_id if st.session_state.job_id else []
+                        ),
+                    )
+                    st.session_state.job_id = batch_filter
+                    # If job_id changed, trigger a rerun
+                    if batch_filter != prev_batch_filter:
+                        st.rerun()
+
+                with col3:
+                    # Store previous per_page value
+                    prev_per_page = st.session_state.per_page
+
+                    # Per-page selection dropdown
+                    per_page = st.selectbox(
+                        "Items per page",
+                        options=[5, 10, 20, 50, 100, 200],
+                        index=[5, 10, 20, 50, 100, 200].index(
+                            st.session_state.per_page
+                        ),
+                        key="per_page_selector",
+                        on_change=lambda: setattr(st.session_state, "current_page", 1),
+                    )
+                    # Update per_page in session state
+                    st.session_state.per_page = per_page
+
+                    # If per_page changed, trigger a rerun
+                    if per_page != prev_per_page:
+                        st.rerun()
+
+                # Apply filters
+                df_filtered = df.copy()
+                # st.write(df_filtered)
+
+                # Display the data with adjusted column widths
+                st.dataframe(
+                    df_filtered[
+                        [
+                            "id",
+                            "session_id",
+                            "content",
+                            "message_type",
+                            "status",
+                            "datetime",
+                        ]
+                    ],
+                    column_config={
+                        "id": "Message ID",
+                        "session_id": "Session ID",
+                        "content": st.column_config.TextColumn(
+                            "Content", width="large"
+                        ),
+                        "message_type": "Type",
+                        "status": st.column_config.TextColumn("Status", width="small"),
+                        "datetime": "Date & Time",
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+                # Pagination controls at the bottom
+                col1, col2, col3 = st.columns([1, 4, 1])
+
+                with col1:
+                    if st.session_state.current_page > 1:
+                        if st.button("⬅️ Previous Page"):
+                            st.session_state.current_page -= 1
+                            st.rerun()
+                    else:
+                        st.button("⬅️ Previous Page", disabled=True)
+
+                with col2:
+                    # Centered pagination info
+                    st.markdown(
+                        f"<div style='text-align: center;'>Showing {len(df_filtered)} of {total_items} messages (Page {st.session_state.current_page} of {total_pages})</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                with col3:
+                    if st.session_state.current_page < total_pages:
+                        if st.button("Next Page ➡️"):
+                            st.session_state.current_page += 1
+                            st.rerun()
+                    else:
+                        st.button("Next Page ➡️", disabled=True)
+
+                # Message statistics
+                st.write("---")
+                st.subheader("Message Statistics")
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Messages", total_items)
+                with col2:
+                    st.metric(
+                        "Processed Messages", len(df[df["status"] == "PROCESSED"])
+                    )
+                with col3:
+                    st.metric("Pending Messages", len(df[df["status"] == "PENDING"]))
+                with col4:
+                    st.metric("Failed Messages", len(df[df["status"] == "FAILED"]))
+            else:
+                st.warning("No outbox messages found")
+        else:
+            st.warning("No outbox items found")
+
+
+def prepare_data(data: dict) -> pd.DataFrame:
+    """
+    Transforms a list of message dictionaries into a pandas DataFrame, extracting
+    relevant fields and converting date and time information.
+
+    Args:
+        data (list): A list of dictionaries, each representing a message with fields
+                     such as 'job_id', 'item_id', 'status', 'session_id', 'message',
+                     and 'added_at'.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the extracted message data with
+                          additional columns for date and time if available.
+    """
+
+    all_items = []
+
+    for message in data:
+        item = {
+            "job_id": message["job_id"],
+            "id": message["item_id"],
+            "status": message["status"],
+            "session_id": message["session_id"],
+            "message_type": message["message"]["message_type"],
+            "content": message["message"]["content"],
+            "added_at": message["added_at"],
+        }
+        all_items.append(item)
+    df = pd.DataFrame(all_items)
+
+    if not df.empty:
+        # Convert datetime
+        df["added_at"] = pd.to_datetime(df["added_at"])
+        df["date"] = df["added_at"].dt.date
+        df["time"] = df["added_at"].dt.time
+
+    return df

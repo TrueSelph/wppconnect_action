@@ -9,9 +9,9 @@ import:py from typing { Union }
 import:py from logging { Logger }
 import:py from .modules.wppconnect_api { WPPConnectAPI }
 import:jac from actions.jivas.wppconnect_action.outbox { Outbox }
-import:jac from actions.jivas.wppconnect_action.jobs { Jobs }
+import:jac from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
 import:jac from actions.jivas.wppconnect_action.job { Job }
-import:jac from actions.jivas.wppconnect_action.job_status { JobStatus }
+import:jac from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
 
 import:py from jvserve.lib.agent_interface { AgentInterface }
 import:py from jivas.agent.modules.agentlib.utils { Utils }
@@ -359,7 +359,7 @@ node WPPConnectAction :Action: {
                     if(interaction_node := frame_node.get_last_interaction()) {
                         if interaction_node.channel in ['whatsapp'] {
                             # add the message to the outbox
-                            self.add_outbox_item(job_id=job_id, session_id=frame_node.session_id, message=message);
+                            self.add_outbox_item(status=OutboxItemStatus.PENDING, job_id=job_id, session_id=frame_node.session_id, message=message);
                         }
                     }
                 }
@@ -433,7 +433,7 @@ node WPPConnectAction :Action: {
         jobs = list(self.get_jobs().items());
 
         while processed_count < batch_size and len(jobs) > 0 {
-            (batch_id, job) = jobs.pop(0);
+            (job_id, job) = jobs.pop(0);
 
             # Process batch slice
             processable = min(batch_size - processed_count, len(job['pending']));
@@ -453,20 +453,20 @@ node WPPConnectAction :Action: {
                         job['processed'][item_id] = item;
                         success_count += 1;
                         new_success_rate = job['success_rate'] + success_count;
-                        self.update_job_collection(status=JobStatus.PROCESSED, job_id=item_id, batch_id=batch_id, success_rate=new_success_rate);
+                        self.update_job_collection(status=OutboxItemStatus.PROCESSED, item_id=item_id, job_id=job_id, success_rate=new_success_rate);
 
                         self.update_interaction_context(item, interaction_message);
                     } else {
                         job['failed'][item_id] = item;
                         failure_count += 1;
-                        self.update_job_collection(status=JobStatus.FAILED, job_id=item_id, batch_id=batch_id);
+                        self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
                     }
 
                     del job['pending'][item_id];
                     processed_count += 1;
                 } except Exception as e {
                     self.logger.error(f"Outbox message processing failed: {str(e)}");
-                    self.update_job_collection(status=JobStatus.FAILED, job_id=item_id, batch_id=batch_id);
+                    self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
                     job['failed'][item_id] = item;
                     del job['pending'][item_id];
                     failure_count += 1;
@@ -475,7 +475,7 @@ node WPPConnectAction :Action: {
             }
 
             # Update job state
-            self.maybe_trigger_callback(batch_id, job);
+            self.maybe_trigger_callback(job_id, job);
         }
 
         return (processed_count, success_count, failure_count);
@@ -495,16 +495,17 @@ node WPPConnectAction :Action: {
         );
     }
 
-    can add_outbox_job(messages: list, callback_url: str = "") -> str {
+    can add_outbox_job(status: OutboxItemStatus = OutboxItemStatus.PENDING, messages: list, callback_url: str = "") -> str {
         # Adds a batch of messages to the outbox with comprehensive validation
         # Returns job ID if successful, empty string if no valid messages
+        self.logger.warning("adding add_outbox_job");
 
         if not messages or not isinstance(messages, list) {
             self.logger.error("Invalid messages format - expected list of message dicts");
             return "";
         }
 
-        job_id = str(uuid.uuid4());
+        item_id = str(uuid.uuid4());
         valid_items = 0;
         validation_errors = [];
 
@@ -519,7 +520,8 @@ node WPPConnectAction :Action: {
                     message=item['message']
                 );
                 self.add_outbox_item(
-                    job_id=job_id,
+                    status=OutboxItemStatus.PENDING,
+                    item_id=item_id,
                     session_id=item['to'],
                     message=interaction_message
                 );
@@ -533,8 +535,8 @@ node WPPConnectAction :Action: {
 
         # Clean up empty jobs
         if valid_items == 0 {
-            self.delete_outbox_item_collection(batch_id=job_id);
-            self.logger.warning(f"Job {job_id} contained no valid messages");
+            self.purge_outbox(item_id=item_id);
+            self.logger.warning(f"Job {item_id} contained no valid messages");
             if validation_errors {
                 self.logger.debug(f"Validation errors:\n" + "\n".join(validation_errors));
             }
@@ -543,7 +545,7 @@ node WPPConnectAction :Action: {
 
         # Start scheduler only if valid messages exist
         self.start_outbox_scheduler();
-        return job_id;
+        return item_id;
     }
 
     can validate_message_item(item: dict, index: int, error_log: list) -> bool {
@@ -650,7 +652,7 @@ node WPPConnectAction :Action: {
         };
     }
 
-    can add_outbox_item(job_id: str, session_id: str, message: InteractionMessage) {
+    can add_outbox_item(status: OutboxItemStatus = OutboxItemStatus.PENDING, job_id: str, session_id: str, message: InteractionMessage) {
         # Adds validated item to specified job with type checking
 
         if not all([
@@ -663,7 +665,7 @@ node WPPConnectAction :Action: {
         }
 
         item_id = str(uuid.uuid4());
-        self.add_outbox_item_collection(batch_id= job_id, job_id=item_id, session_id=session_id, message=message);
+        self.add_outbox_item_collection(status=status, job_id= job_id, item_id=item_id, session_id=session_id, message=message);
     }
 
     can maybe_trigger_callback(job_id:str, job:dict) {
@@ -730,24 +732,31 @@ node WPPConnectAction :Action: {
 
 
     # collection
-    can add_outbox_item_collection(batch_id: str, job_id: str, session_id: str, message: InteractionMessage) -> Job {
+    can add_outbox_item_collection(status:OutboxItemStatus, job_id: str, item_id: str, session_id: str, message: InteractionMessage) -> Job {
         collection = self.get_collection();
-        return (collection spawn _add_job_collection(batch_id=batch_id, job_id=job_id, session_id=session_id, message=message));
+        outbox_item = (collection spawn _add_job_collection(status=status, job_id=job_id, item_id=item_id, session_id=session_id, message=message)).outbox_item;
+        if outbox_item {
+            self.increment_job_count();
+        }
+        return outbox_item;
     }
 
-    can delete_outbox_item_collection(batch_id: str="") -> Job {
+    can purge_outbox(item_id: str="") -> Job {
         collection = self.get_collection();
-        return (collection spawn _delete_batch_job(batch_id=batch_id));
+        jobs = (collection spawn _delete_job(item_id=item_id)).deleted;
+        total_jobs = self.get_job_count();
+        self.set_job_count(total_jobs - len(jobs));
+        return jobs;
     }
 
-    can get_jobs(batch_id:str = "") -> dict {
+    can get_jobs(job_id:str = "") -> dict {
         collection = self.get_collection();
-        return (collection spawn _get_jobs(batch_id=batch_id)).jobs;
+        return (collection spawn _get_jobs(job_id=job_id)).outbox_item;
     }
 
-    can update_job_collection(status: str="", job_id:str = "", batch_id:str = "", success_rate:float = 0.0) -> Job {
+    can update_job_collection(status: str="", job_id:str = "", item_id:str = "", success_rate:float = 0.0) -> Job {
         collection = self.get_collection();
-        return (collection spawn _update_job_collection(status=status, job_id=job_id, batch_id=batch_id, success_rate=success_rate));
+        return (collection spawn _update_job_collection(status=status, job_id=job_id, item_id=item_id, success_rate=success_rate));
     }
 
     can import_outbox(outbox: dict, purge_collection: bool = False) -> bool {
@@ -756,13 +765,19 @@ node WPPConnectAction :Action: {
 
             # purge jobs collection
             if(purge_collection){
-                self.delete_outbox_item_collection();
+                self.purge_outbox();
             }
 
             # import outbox
-            for (batch_id, job_data) in outbox.items() {
-                for (job_id, job) in job_data['pending'].items() {
-                    self.add_outbox_item_collection(batch_id=batch_id, job_id=job_id, session_id=job['session_id'], message=job['message']);
+            for (job_id, job_data) in outbox.items() {
+                for (item_id, job) in job_data['pending'].items() {
+                    self.add_outbox_item_collection(status=OutboxItemStatus.PENDING, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                }
+                for (item_id, job) in job_data['processed'].items() {
+                    self.add_outbox_item_collection(status=OutboxItemStatus.PROCESSED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                }
+                for (item_id, job) in job_data['failed'].items() {
+                    self.add_outbox_item_collection(status=OutboxItemStatus.FAILED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
             }
 
@@ -786,12 +801,59 @@ node WPPConnectAction :Action: {
             return False;
         }
     }
+
+
+    can get_job_count() -> int {
+        collection = self.get_collection();
+        return collection.get_data_item('job_count') or 0;
+    }
+
+    can set_job_count(amount:int) {
+        collection = self.get_collection();
+        collection.set_data_item('job_count', amount);
+    }
+
+    can increment_job_count(amount:int=1) -> int {
+        # Increment the job_count by the specified amount (default 1).
+        collection = self.get_collection();
+        if amount < 0 {
+            return self.get_job_count();
+        }
+
+        job_count = self.get_job_count() + 1;
+        collection.set_data_item('job_count', job_count);
+
+        return job_count;
+    }
+
+    can list_outbox_items(page:int, limit:int, filtered_status:str = "", filtered_job_id:str = "") -> list[dict] {
+        # Lists all document entries in the manifest with pagination.
+
+        collection = self.get_collection();
+        result = collection spawn _list_outbox_items(page=page, limit=limit, total_items=self.get_job_count(), filtered_status=filtered_status, filtered_job_id=filtered_job_id);
+        if not result {
+            self.logger.error("No jobs found in the manifest.");
+            return {};
+        }
+        return {
+            "page": result.page,
+            "limit": result.limit,
+            "total_items": result.total_items,
+            "total_pages": result.total_pages,
+            "has_previous": result.has_previous,
+            "has_next": result.has_next,
+            "items": result.items,
+            "jobs": result.jobs
+        };
+    }
+
 }
 
 
-walker _delete_batch_job {
-    has batch_id:str = "";
+walker _delete_job {
+    has item_id:str = "";
     has deleted:list = [];
+    has job_deleted:list = [];
 
     obj __specs__ {
         static has private:bool = True;
@@ -802,17 +864,25 @@ walker _delete_batch_job {
     }
 
     can on_outbox with Outbox entry {
-        visit [-->](`?Jobs)(?batch_id == self.batch_id) else {
-            visit [-->](`?Jobs);
+        visit [-->](`?Job);
+        if not self.item_id {
+            self.job_deleted.append(here);
         }
     }
 
-    can on_jobs with Jobs entry {
-        self.deleted.append(here);
-        visit [-->](`?Job);
+    can on_job with Job entry {
+        if self.item_id {
+            visit [-->](`?OutboxItem)(?item_id == self.item_id);
+        }else {
+            visit [-->](`?OutboxItem);
+        }
+
+        if len([-->]) <= 1 or not self.item_id {
+            self.job_deleted.append(here);
+        }
     }
 
-    can on_job with Job entry {
+    can on_outbox_item with OutboxItem entry {
         self.deleted.append(here);
     }
 
@@ -820,15 +890,20 @@ walker _delete_batch_job {
         for item in self.deleted {
             Jac.destroy(item);
         }
+
+        for item in self.job_deleted {
+            Jac.destroy(item);
+        }
     }
 
 }
 
 walker _add_job_collection {
-    has job:Job = None;
-    has batch_id:str = "";
+    has outbox_item:OutboxItem = None;
     has job_id:str = "";
+    has item_id:str = "";
     has session_id:str = "";
+    has status:OutboxItemStatus = OutboxItemStatus.PENDING;
     has message:InteractionMessage = None;
 
 
@@ -845,25 +920,28 @@ walker _add_job_collection {
     }
 
     can on_outbox with Outbox entry {
-        visit [-->](`?Jobs)(?batch_id == self.batch_id) else {
-            jobs = Jobs(batch_id=self.batch_id);
-            here ++> jobs;
-            visit [-->](`?Jobs);
+        visit [-->](`?Job)(?job_id == self.job_id) else {
+            job = Job(job_id=self.job_id);
+            here ++> job;
+
+            visit [-->](`?Job)(?job_id == self.job_id);
         }
     }
 
-    can on_jobs with Jobs entry {
-        date_now = datetime.now().isoformat();
-        self.job = Job(id=self.job_id, session_id=self.session_id, added_at=date_now, message=self.message, status=JobStatus.PENDING);
-        here ++> self.job;
-        here.total += 1;
-        here.created_at = date_now;
+    can on_job with Job entry {
+        visit [-->](`?OutboxItem)(?item_id == self.item_id) else {
+            date_now = datetime.now().isoformat();
+            self.outbox_item = OutboxItem(item_id=self.item_id, session_id=self.session_id, added_at=date_now, message=self.message, status=self.status);
+            here ++> self.outbox_item;
+            here.total = here.total + 1;
+            here.created_at = date_now;
+        }
     }
 }
 
 walker _update_job_collection {
     has status:str = "";
-    has batch_id:str = "";
+    has item_id:str = "";
     has job_id:str = "";
     has success_rate:float = 0.0;
 
@@ -876,29 +954,29 @@ walker _update_job_collection {
     }
 
     can on_outbox with Outbox entry {
-        visit [-->](`?Jobs);
+        visit [-->](`?Job)(?job_id == self.job_id);
     }
 
-    can on_jobs with Jobs entry {
-        if here.batch_id == self.batch_id {
+    can on_job with Job entry {
+        if here.job_id == self.job_id {
             if self.success_rate {
                 here.success_rate = self.success_rate / here.total;
             }
         }
 
-        if self.status in JobStatus {
-            visit [-->](`?Job)(?id == self.job_id);
+        if self.status in OutboxItemStatus {
+            visit [-->](`?OutboxItem)(?item_id == self.item_id);
         }
     }
 
-    can on_job with Job entry {
+    can on_outbox_item with OutboxItem entry {
         here.status = self.status;
     }
 }
 
 walker _get_jobs {
-    has batch_id:str = "";
-    has jobs:dict = {};
+    has job_id:str = "";
+    has outbox_item:dict = {};
 
     obj __specs__ {
         static has private:bool = True;
@@ -909,56 +987,144 @@ walker _get_jobs {
     }
 
     can on_outbox with Outbox entry {
-        if self.batch_id {
-            visit [-->](`?Jobs)(?batch_id == self.batch_id);
+        if self.job_id {
+            visit [-->](`?Job)(?job_id == self.job_id);
         } else {
-            visit [-->](`?Jobs);
+            visit [-->](`?Job);
         }
     }
 
-    can on_jobs with Jobs entry {
+    can on_job with Job entry {
 
         # get pending post
-        pending_job_node = [-->](`?Job)(?status == JobStatus.PENDING);
-        pending_job_data = {};
-        for job in pending_job_node {
-            pending_job_data[job.id] = {
-                "session_id": job.session_id,
-                "message": job.message,
-                "added_at": job.added_at
+        pending_outbox_item_node = [-->](`?OutboxItem)(?status == OutboxItemStatus.PENDING);
+        pending_outbox_item_data = {};
+        for item in pending_outbox_item_node {
+            pending_outbox_item_data[item.item_id] = {
+                "session_id": item.session_id,
+                "message": item.message,
+                "added_at": item.added_at
             };
         }
 
-        # get processed jobs
-        processed_job_node = [-->](`?Job)(?status == JobStatus.PROCESSED);
-        processed_job_data = {};
-        for job in processed_job_node {
-            processed_job_data[job.id] = {
-                "session_id": job.session_id,
-                "message": job.message,
-                "added_at": job.added_at
+        # get processed outbox item
+        processed_outbox_item_node = [-->](`?OutboxItem)(?status == OutboxItemStatus.PROCESSED);
+        processed_outbox_item_data = {};
+        for item in processed_outbox_item_node {
+            processed_outbox_item_data[item.item_id] = {
+                "session_id": item.session_id,
+                "message": item.message,
+                "added_at": item.added_at
             };
         }
 
-        # get failed jobs
-        failed_job_node = [-->](`?Job)(?status == JobStatus.FAILED);
-        failed_job_data = {};
-        for job in failed_job_node {
-            failed_job_data[job.id] = {
-                "session_id": job.session_id,
-                "message": job.message,
-                "added_at": job.added_at
+        # get failed outbox item
+        failed_outbox_item_node = [-->](`?OutboxItem)(?status == OutboxItemStatus.FAILED);
+        failed_outbox_item_data = {};
+        for item in failed_outbox_item_node {
+            failed_outbox_item_data[item.item_id] = {
+                "session_id": item.session_id,
+                "message": item.message,
+                "added_at": item.added_at
             };
         }
 
-        self.jobs[here.batch_id] = {
-            "pending": pending_job_data,
-            "processed": processed_job_data,
-            "failed": failed_job_data,
+        self.outbox_item[here.job_id] = {
+            "pending": pending_outbox_item_data,
+            "processed": processed_outbox_item_data,
+            "failed": failed_outbox_item_data,
             "success_rate": here.success_rate,
             "total": here.total
         };
 
+    }
+}
+
+
+walker _list_outbox_items {
+    # Spawns on action collection and returns a paginated, flattened list of doc entries with total count and page control
+
+    has page:int = 1;
+    has limit:int = 50;
+    has offset:int = 0;
+    has total_items:int = 0;
+    has total_pages:int = 1;
+    has has_previous:bool = False;
+    has has_next:bool = False;
+    has current_index:int = 0;
+    has items:list = [];
+    has filtered_status:str = [];
+    has filtered_job_id:str = [];
+    has jobs:list = [];
+
+    # set up logger
+    static has logger:Logger = logging.getLogger(__name__);
+
+    obj __specs__ {
+        static has private: bool = True;
+    }
+
+    can on_collection with Collection entry {
+        visit [-->](`?Outbox);
+    }
+
+    can on_outbox with Outbox entry {
+        # First, count total doc entries
+        job_entries = [-->](`?Job);
+
+        # Calculate offset based on page and limit
+        if self.limit > 0 {
+            self.offset = (self.page - 1) * self.limit;
+            self.total_pages = (self.total_items // self.limit) + (1 if self.total_items % self.limit > 0 else 0);
+            self.has_previous = self.page > 1;
+            self.has_next = self.page < self.total_pages;
+        } else {
+            self.offset = 0;
+            self.total_pages = 1;
+            self.has_previous = False;
+            self.has_next = False;
+        }
+
+        visit [-->](`?Job);
+    }
+
+    can on_job with Job entry {
+        self.jobs.append(here.job_id);
+        if self.filtered_job_id {
+            if(here.job_id in self.filtered_job_id) {
+                visit [-->](`?OutboxItem);
+            }
+        } else {
+            visit [-->](`?OutboxItem);
+        }
+    }
+
+    can on_outbox_item with OutboxItem entry {
+        if self.filtered_status {
+            if here.status.name in self.filtered_status {
+                if self.current_index >= self.offset and (self.limit == 0 or len(self.items) < self.limit) {
+                    outbox_item = here.export();
+                    job_id = [<--](`?Job)[0].job_id;
+                    outbox_item['job_id'] = job_id;
+                    self.items.append(outbox_item);
+                }
+                self.current_index += 1;
+                if self.limit != 0 and len(self.items) >= self.limit {
+                    disengage;
+                }
+            }
+        }else {
+            if self.current_index >= self.offset and (self.limit == 0 or len(self.items) < self.limit) {
+                outbox_item = here.export();
+                job_id = [<--](`?Job)[0].job_id;
+                outbox_item['job_id'] = job_id;
+                self.items.append(outbox_item);
+            }
+            self.current_index += 1;
+            if self.limit != 0 and len(self.items) >= self.limit {
+                disengage;
+            }
+        }
     }
 }
 

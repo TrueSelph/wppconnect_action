@@ -10,3 +10,5 @@ include:jac send_messages;
 include:jac broadcast_message;
 include:jac export_outbox;
 include:jac import_outbox;
+include:jac list_outbox_items;
+include:jac purge_outbox;

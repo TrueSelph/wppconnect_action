@@ -1,7 +1,7 @@
 import from enum { unique }
 
 @unique
-enum JobStatus {
+enum OutboxItemStatus {
     PENDING = 'PENDING',
     PROCESSED = 'PROCESSED',
     FAILED = 'FAILED',
