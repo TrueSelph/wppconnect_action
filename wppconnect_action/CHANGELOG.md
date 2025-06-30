@@ -102,3 +102,6 @@ poll_im.data = {
 ## 0.0.14
 
 - Updated documentation to include the details on how to send polls.
+
+## 0.0.15
+- Update action to store outbox in collection.
