@@ -7,8 +7,8 @@ from contextlib import suppress
 import pandas as pd
 import streamlit as st
 import yaml
-from jvcli.client.lib.utils import call_action_walker_exec
-from jvcli.client.lib.widgets import app_controls, app_header, app_update_action
+from jvclient.lib.utils import call_action_walker_exec
+from jvclient.lib.widgets import app_controls, app_header, app_update_action
 from streamlit_router import StreamlitRouter
 
 

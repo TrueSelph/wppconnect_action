@@ -1,11 +1,11 @@
-import:py logging;
-import:py from logging { Logger }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.actions { Actions }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
-import:jac from jivas.agent.core.agent { Agent }
+import logging;
+import from logging { Logger }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jivas.agent.core.agent { Agent }
 
-walker get_qrcode :interact_graph_walker: {
+walker get_qrcode(interact_graph_walker) {
 
     has response:dict = {};
 
