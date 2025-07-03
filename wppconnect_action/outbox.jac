@@ -1,3 +1,3 @@
-import:jac from jivas.agent.core.graph_node { GraphNode }
+import from jivas.agent.core.graph_node { GraphNode }
 
-node Outbox :GraphNode: {}
+node Outbox(GraphNode) {}

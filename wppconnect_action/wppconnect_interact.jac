@@ -1,20 +1,21 @@
-import:py logging;
-import:py os;
-import:py re;
-import:py uuid;
-import:py base64;
-import:py mimetypes;
-import:py from logging { Logger }
-import:py from jivas.agent.modules.agentlib.utils { Utils }
-import:py from .modules.wppconnect_api { WPPConnectAPI }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.memory.frame { Frame }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.interact { interact }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import os;
+import re;
+import uuid;
+import base64;
+import mimetypes;
+import from logging { Logger }
+import from jivas.agent.modules.agentlib.utils { Utils }
+import from .modules.wppconnect_api { WPPConnectAPI }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.memory.frame { Frame }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.interact { interact }
+import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
-walker wppconnect_interact :interact_graph_walker: {
+walker wppconnect_interact(interact_graph_walker) {
     # called via a webhook whenever there are verification requests or inbound messages
     # when activated, it will trigger the whatsapp interact action to communicate
 
@@ -44,6 +45,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
 
         # determine if phone number has access
+        self.logger.warning("access");
         if(access_control_action_node := here.get_actions().get(action_label='AccessControlAction')) {
 
             access = access_control_action_node.has_action_access(
@@ -51,6 +53,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 action_label='WPPConnectAction',
                 channel='whatsapp'
             );
+            self.logger.warning(f"access: {data['sender']}, whatsapp {access}");
 
             if not access {
                 Jac.get_context().status = 200;
@@ -150,7 +153,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can is_directed_message(action_node:Action, data:dict) -> bool {
+    def is_directed_message(action_node:Action, data:dict) -> bool {
         # interprets the data to determine whether it's a direct group reply or valid direct chat with content
 
         if(data.get('isGroup')) {
@@ -194,8 +197,8 @@ walker wppconnect_interact :interact_graph_walker: {
         return True;
     }
 
-    can handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
-
+    def handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+        self.logger.warning("handle_chat_message");
         if(self.is_directed_message(action_node, data)) {
             # only respond if we have a message and if we are messaged with @ in groups
 
@@ -223,6 +226,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 channel = "whatsapp",
                 data = [{"label": "whatsapp_chat", "meta": {}, "content": data}]
             )).message;
+            self.logger.warning(f"handle_chat_message: {message}");
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
 
@@ -231,7 +235,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_voicenote_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_voicenote_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # This action downloads the voicenote audio transcribes it and passes it to interact walker as text to be processed
 
         if(not data['author']) { # sidestep voicenotes in group chats
@@ -296,7 +300,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
 
@@ -343,7 +347,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_poll_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_poll_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
 
@@ -367,7 +371,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_location_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_location_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
 

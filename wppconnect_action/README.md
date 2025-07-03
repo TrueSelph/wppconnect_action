@@ -6,7 +6,7 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/wppconnect_action)
 ![GitHub](https://img.shields.io/github/license/TrueSelph/wppconnect_action)
 
-JIVAS action wrapper for WhatsApp API communications using the WPPConnect API with advanced mass messaging outbox. This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version ^2.0.0.
+JIVAS action wrapper for WhatsApp API communications using the WPPConnect API with advanced mass messaging outbox. This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version ^2.1.0.
 
 ## Package Information
 
@@ -23,8 +23,8 @@ JIVAS action wrapper for WhatsApp API communications using the WPPConnect API wi
 ## Configuration
 - **Singleton:** true
 ## Dependencies
-- **Jivas:** `~2.0.0-aplha.40`
-- **PulseAction:** `~0.0.2`
+- **Jivas:** `~2.1.0`
+- **PulseAction:** `~0.1.0`
 - **WPPConnect Server:** `~2.8.5`
 
 ---
