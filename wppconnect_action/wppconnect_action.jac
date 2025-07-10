@@ -505,7 +505,7 @@ node WPPConnectAction :Action: {
             return "";
         }
 
-        item_id = str(uuid.uuid4());
+        job_id = str(uuid.uuid4());
         valid_items = 0;
         validation_errors = [];
 
@@ -521,7 +521,7 @@ node WPPConnectAction :Action: {
                 );
                 self.add_outbox_item(
                     status=status,
-                    item_id=item_id,
+                    job_id=job_id,
                     session_id=item['to'],
                     message=interaction_message
                 );
@@ -535,8 +535,8 @@ node WPPConnectAction :Action: {
 
         # Clean up empty jobs
         if valid_items == 0 {
-            self.purge_outbox(item_id=item_id);
-            self.logger.warning(f"Job {item_id} contained no valid messages");
+            self.purge_outbox(job_id=job_id);
+            self.logger.warning(f"Job {job_id} contained no valid messages");
             if validation_errors {
                 self.logger.debug(f"Validation errors:\n" + "\n".join(validation_errors));
             }
@@ -545,7 +545,7 @@ node WPPConnectAction :Action: {
 
         # Start scheduler only if valid messages exist
         self.start_outbox_scheduler();
-        return item_id;
+        return job_id;
     }
 
     can validate_message_item(item: dict, index: int, error_log: list) -> bool {
@@ -741,9 +741,9 @@ node WPPConnectAction :Action: {
         return outbox_item;
     }
 
-    can purge_outbox(item_id: str="") -> Job {
+    can purge_outbox(job_id: str="") -> Job {
         collection = self.get_collection();
-        jobs = (collection spawn _delete_job(item_id=item_id)).deleted;
+        jobs = (collection spawn _delete_job(job_id=job_id)).deleted;
         total_jobs = self.get_job_count();
         self.set_job_count(total_jobs - len(jobs));
         return jobs;
@@ -851,7 +851,7 @@ node WPPConnectAction :Action: {
 
 
 walker _delete_job {
-    has item_id:str = "";
+    has job_id:str = "";
     has deleted:list = [];
     has job_deleted:list = [];
 
@@ -864,20 +864,18 @@ walker _delete_job {
     }
 
     can on_outbox with Outbox entry {
-        visit [-->](`?Job);
-        if not self.item_id {
+        if not self.job_id {
             self.job_deleted.append(here);
+            visit [-->](`?Job);
+        } else {
+            visit [-->](`?Job)(?job_id == self.job_id);
         }
     }
 
     can on_job with Job entry {
-        if self.item_id {
-            visit [-->](`?OutboxItem)(?item_id == self.item_id);
-        }else {
-            visit [-->](`?OutboxItem);
-        }
+        visit [-->](`?OutboxItem);
 
-        if len([-->]) <= 1 or not self.item_id {
+        if len([-->]) <= 1 or not self.job_id {
             self.job_deleted.append(here);
         }
     }
