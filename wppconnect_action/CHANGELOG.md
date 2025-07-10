@@ -105,3 +105,6 @@ poll_im.data = {
 
 ## 0.0.15
 - Update action to store outbox in collection.
+
+## 0.0.16
+- add missing status to add_outbox_job

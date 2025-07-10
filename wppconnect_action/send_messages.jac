@@ -4,6 +4,8 @@ import:jac from jivas.agent.core.agent { Agent }
 import:jac from jivas.agent.action.action { Action }
 import:jac from jivas.agent.action.actions { Actions }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import:jac from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
+
 
 walker send_messages :interact_graph_walker: {
     # accepts a collection of messages and a callback_url to be queued up for sending
@@ -116,7 +118,7 @@ walker send_messages :interact_graph_walker: {
     }
 
     can on_action with Action entry {
-        self.response = here.add_outbox_job(messages=self.messages, callback_url=self.callback_url);
+        self.response = here.add_outbox_job(status = OutboxItemStatus.PENDING, messages=self.messages, callback_url=self.callback_url);
     }
 
 }
