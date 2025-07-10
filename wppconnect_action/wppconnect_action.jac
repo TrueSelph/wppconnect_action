@@ -520,7 +520,7 @@ node WPPConnectAction :Action: {
                     message=item['message']
                 );
                 self.add_outbox_item(
-                    status=OutboxItemStatus.PENDING,
+                    status=status,
                     item_id=item_id,
                     session_id=item['to'],
                     message=interaction_message
