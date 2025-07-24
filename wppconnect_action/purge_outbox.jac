@@ -3,11 +3,11 @@ import from logging { Logger }
 import from jivas.agent.core.agent { Agent }
 import from jivas.agent.action.action { Action }
 import from jivas.agent.action.actions { Actions }
-import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
 
-walker purge_outbox(interact_graph_walker) {
+walker purge_outbox(agent_graph_walker) {
 
-    has item_id:str = "";
+    has job_id:str = "";
     has response:dict = {};
 
 
@@ -28,7 +28,7 @@ walker purge_outbox(interact_graph_walker) {
     }
 
     can on_action with Action entry {
-        self.response = here.purge_outbox(item_id=self.item_id);
+        self.response = here.purge_outbox(job_id=self.job_id);
     }
 
 }

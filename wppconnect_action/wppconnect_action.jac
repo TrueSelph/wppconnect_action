@@ -1,10 +1,11 @@
 import os;
 import uuid;
+import shutil;
 import logging;
 import traceback;
 import base64;
 import random;
-import from datetime { datetime }
+import from datetime { datetime, timezone }
 import from typing { Union }
 import from logging { Logger }
 import from .modules.wppconnect_api { WPPConnectAPI }
@@ -13,7 +14,7 @@ import from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
 import from actions.jivas.wppconnect_action.job { Job }
 import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
 
-import from jvserve.lib.agent_interface { AgentInterface }
+import from jvserve.lib.agent_interface { encrypt_webhook_key_exec }
 import from jivas.agent.modules.agentlib.utils { Utils }
 import from jivas.agent.memory.collection { Collection }
 import from jivas.agent.action.action { Action }
@@ -21,6 +22,7 @@ import from jivas.agent.memory.interaction_response {
     MessageType, InteractionMessage, TextInteractionMessage, MediaInteractionMessage, MultiInteractionMessage
 }
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
+import from jivas.agent.core.graph_node { GraphNode }
 
 
 node WPPConnectAction(Action) {
@@ -52,6 +54,7 @@ node WPPConnectAction(Action) {
     has outbox_max_batch_size:int = 10; # the maximum batch size of messages to send from the outbox
     # poll settings
     has poll_manager_action:str = "PollManagerInteractAction"; # the label of the poll manager action to use for polls
+    has recent_files_time_window:int = 30; # the time window in seconds to search for recent files
 
 
     def on_enable() {
@@ -188,11 +191,11 @@ node WPPConnectAction(Action) {
         agent_id = self.get_agent().id;
         module_root = self.get_module_root();
         # generate webhook key
-        webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
+        webhook_key = encrypt_webhook_key_exec(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
 
         if(self.base_url and self.api_url and webhook_key) {
             # complete the full webhook url
-            self.webhook_url = f'{self.base_url}/webhook/{webhook_key}';
+            self.webhook_url = f'{self.base_url}/action/webhook/{webhook_key}';
             self.logger.debug(f'wppconnect webhook url: {self.webhook_url}');
 
             result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True);
@@ -237,28 +240,21 @@ node WPPConnectAction(Action) {
 
     def send_message(session_id:str, message:InteractionMessage, is_group:bool = False, parent_message_id:str = "") -> dict {
         # processes an agent response payload format and sends an wppconnect message to a specified session_id via the action
-        self.logger.warning(f"send_message: {message}");
-        self.logger.warning(f"session_id: {session_id}");
         result = {};
 
         if(message and session_id) {
 
             if(not parent_message_id) {
-                parent_message_id = message.get_meta('parent_message_id');
+                parent_message_id = message.data_get('parent_message_id');
             }
-            self.logger.warning(f"type:  {message.get_type()}");
-            self.logger.warning(f"type:: {MessageType.TEXT.value}");
 
             if (message.get_type() == MessageType.SILENCE.value) {}
             elif(message.get_type() == MessageType.TEXT.value) {
-                self.logger.warning(f"in");
                 content = self.sanitize_message(message = message.get_content());
-                self.logger.warning(f"content: {content}");
                 outgoing = Utils.chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
 
                 for chunk in outgoing {
                     result = self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
-                    self.logger.warning(f"result: {result}");
                 }
 
 
@@ -504,7 +500,7 @@ node WPPConnectAction(Action) {
         );
     }
 
-    def add_outbox_job(status: OutboxItemStatus = OutboxItemStatus.PENDING, messages: list, callback_url: str = "") -> str {
+    def add_outbox_job(messages: list, callback_url: str = "", status: OutboxItemStatus = OutboxItemStatus.PENDING) -> str {
         # Adds a batch of messages to the outbox with comprehensive validation
         # Returns job ID if successful, empty string if no valid messages
         self.logger.warning("adding add_outbox_job");
@@ -514,7 +510,7 @@ node WPPConnectAction(Action) {
             return "";
         }
 
-        item_id = str(uuid.uuid4());
+        job_id = str(uuid.uuid4());
         valid_items = 0;
         validation_errors = [];
 
@@ -530,7 +526,7 @@ node WPPConnectAction(Action) {
                 );
                 self.add_outbox_item(
                     status=OutboxItemStatus.PENDING,
-                    item_id=item_id,
+                    job_id=job_id,
                     session_id=item['to'],
                     message=interaction_message
                 );
@@ -544,8 +540,8 @@ node WPPConnectAction(Action) {
 
         # Clean up empty jobs
         if valid_items == 0 {
-            self.purge_outbox(item_id=item_id);
-            self.logger.warning(f"Job {item_id} contained no valid messages");
+            self.purge_outbox(job_id=job_id);
+            self.logger.warning(f"Job {job_id} contained no valid messages");
             if validation_errors {
                 self.logger.debug(f"Validation errors:\n" + "\n".join(validation_errors));
             }
@@ -554,7 +550,7 @@ node WPPConnectAction(Action) {
 
         # Start scheduler only if valid messages exist
         self.start_outbox_scheduler();
-        return item_id;
+        return job_id;
     }
 
     def validate_message_item(item: dict, index: int, error_log: list) -> bool {
@@ -661,7 +657,7 @@ node WPPConnectAction(Action) {
         };
     }
 
-    def add_outbox_item(status: OutboxItemStatus = OutboxItemStatus.PENDING, job_id: str, session_id: str, message: InteractionMessage) {
+    def add_outbox_item(job_id: str, session_id: str, status: OutboxItemStatus = OutboxItemStatus.PENDING, message: InteractionMessage) {
         # Adds validated item to specified job with type checking
 
         if not all([
@@ -750,9 +746,9 @@ node WPPConnectAction(Action) {
         return outbox_item;
     }
 
-    def purge_outbox(item_id: str="") -> Job {
+    def purge_outbox(job_id: str="") -> Job {
         collection = self.get_collection();
-        jobs = (collection spawn _delete_job(item_id=item_id)).deleted;
+        jobs = (collection spawn _delete_job(job_id=job_id)).deleted;
         total_jobs = self.get_job_count();
         self.set_job_count(total_jobs - len(jobs));
         return jobs;
@@ -814,12 +810,12 @@ node WPPConnectAction(Action) {
 
     def get_job_count() -> int {
         collection = self.get_collection();
-        return collection.get_data_item('job_count') or 0;
+        return collection.data_get('job_count') or 0;
     }
 
     def set_job_count(amount:int) {
         collection = self.get_collection();
-        collection.set_data_item('job_count', amount);
+        collection.data_set('job_count', amount);
     }
 
     def increment_job_count(amount:int=1) -> int {
@@ -830,7 +826,7 @@ node WPPConnectAction(Action) {
         }
 
         job_count = self.get_job_count() + 1;
-        collection.set_data_item('job_count', job_count);
+        collection.data_set('job_count', job_count);
 
         return job_count;
     }
@@ -856,11 +852,33 @@ node WPPConnectAction(Action) {
         };
     }
 
+
+    def get_wppconnect_media(session_id:str) -> list {
+        collection = self.get_collection();
+        media_list = self.api().list_files_in_folder(f".files/{self.get_agent().id}/{self.label}/media/{session_id}");
+
+        media_urls = [];
+        for output_filename in media_list {
+            output_file_path = f"media/{session_id}/{output_filename}";
+            file_url = self.get_file_url(output_file_path);
+            media_urls.append(file_url);
+        }
+        return media_urls;
+    }
+
+    def get_wppconnect_recent_files(session_id:str, seconds:int=0) -> list {
+        return self.api().list_files_in_folder(directory=f".files/{self.get_agent().id}/{self.label}/media/{session_id}", within_seconds=seconds);
+    }
+
+    def delete_wppconnect_media(session_id:str) {
+        media_path = f".files/{self.get_agent().id}/{self.label}/media/{session_id}";
+        shutil.rmtree(media_path, ignore_errors=True);
+    }
 }
 
 
 walker _delete_job {
-    has item_id:str = "";
+    has job_id:str = "";
     has deleted:list = [];
     has job_deleted:list = [];
 
@@ -873,20 +891,18 @@ walker _delete_job {
     }
 
     can on_outbox with Outbox entry {
-        visit [-->](`?Job);
-        if not self.item_id {
+        if not self.job_id {
             self.job_deleted.append(here);
+            visit [-->](`?Job);
+        } else {
+            visit [-->](`?Job)(?job_id == self.job_id);
         }
     }
 
     can on_job with Job entry {
-        if self.item_id {
-            visit [-->](`?OutboxItem)(?item_id == self.item_id);
-        }else {
-            visit [-->](`?OutboxItem);
-        }
+        visit [-->](`?OutboxItem);
 
-        if len([-->]) <= 1 or not self.item_id {
+        if len([-->]) <= 1 or not self.job_id {
             self.job_deleted.append(here);
         }
     }

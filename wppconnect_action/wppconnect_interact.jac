@@ -11,11 +11,11 @@ import from jivas.agent.core.agent { Agent }
 import from jivas.agent.memory.frame { Frame }
 import from jivas.agent.action.action { Action }
 import from jivas.agent.action.interact { interact }
-import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
-walker wppconnect_interact(interact_graph_walker) {
+walker wppconnect_interact(agent_graph_walker) {
     # called via a webhook whenever there are verification requests or inbound messages
     # when activated, it will trigger the whatsapp interact action to communicate
 
@@ -45,7 +45,6 @@ walker wppconnect_interact(interact_graph_walker) {
         }
 
         # determine if phone number has access
-        self.logger.warning("access");
         if(access_control_action_node := here.get_actions().get(action_label='AccessControlAction')) {
 
             access = access_control_action_node.has_action_access(
@@ -53,7 +52,6 @@ walker wppconnect_interact(interact_graph_walker) {
                 action_label='WPPConnectAction',
                 channel='whatsapp'
             );
-            self.logger.warning(f"access: {data['sender']}, whatsapp {access}");
 
             if not access {
                 Jac.get_context().status = 200;
@@ -198,7 +196,6 @@ walker wppconnect_interact(interact_graph_walker) {
     }
 
     def handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
-        self.logger.warning("handle_chat_message");
         if(self.is_directed_message(action_node, data)) {
             # only respond if we have a message and if we are messaged with @ in groups
 
@@ -224,9 +221,8 @@ walker wppconnect_interact(interact_graph_walker) {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_chat", "meta": {}, "content": data}]
+                data = {"whatsapp_chat": data}
             )).message;
-            self.logger.warning(f"handle_chat_message: {message}");
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
 
@@ -265,7 +261,7 @@ walker wppconnect_interact(interact_graph_walker) {
                     reporting = False,
                     tts = True,
                     channel = "whatsapp",
-                    data = [{"label": "whatsapp_voicenote", "meta": {"message_type": data['message_type']}, "content": data['media']}]
+                    data = {"whatsapp_voicenote": data['media']}
                 ));
             }
 
@@ -303,6 +299,16 @@ walker wppconnect_interact(interact_graph_walker) {
     def handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
+            # default utterance
+            interact_utterance = f'sent {data['message_type']} file in the chat';
+            existing_files_url = [];
+
+            # check for existing media
+            existing_media_url = action_node.get_wppconnect_recent_files(session_id=frame_node.session_id, seconds=action_node.recent_files_time_window);
+            if existing_media_url {
+                interact_utterance = "";
+            }
+
 
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
@@ -314,7 +320,7 @@ walker wppconnect_interact(interact_graph_walker) {
 
             # ensure the output filename is without whitespaces and slashes
             output_filename = f"wa_{str(uuid.uuid4())}_{name.replace(" ", "_").replace("/", "_").replace("\\", "_")}{extension}";
-            output_file_path = f"wpp/{output_filename}";
+            output_file_path = f"media/{frame_node.session_id}/{output_filename}";
 
             # save document to the file system
             action_node.save_file(output_file_path, file_data);
@@ -331,13 +337,13 @@ walker wppconnect_interact(interact_graph_walker) {
             data['media'] = file_url;
 
             message = (root spawn interact(
-                utterance = data['caption'] if data['caption'] else f'sent {data['message_type']} file in the chat',
+                utterance = data['caption'] if data['caption'] else interact_utterance,
                 agent_id = agent_node.id,
                 session_id = frame_node.session_id,
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
+                data = {"whatsapp_media": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
@@ -361,7 +367,7 @@ walker wppconnect_interact(interact_graph_walker) {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
+                data = {"whatsapp_media": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
@@ -382,7 +388,7 @@ walker wppconnect_interact(interact_graph_walker) {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_location", "meta": {}, "content": data}]
+                data = {"whatsapp_location": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);

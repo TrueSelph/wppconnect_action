@@ -3,12 +3,12 @@ import from logging { Logger }
 import from jivas.agent.core.agent { Agent }
 import from jivas.agent.action.action { Action }
 import from jivas.agent.action.actions { Actions }
-import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
 import from jivas.agent.memory.interaction_response {
     MessageType, InteractionMessage, TextInteractionMessage, MediaInteractionMessage, MultiInteractionMessage
 }
 
-walker broadcast_message(interact_graph_walker) {
+walker broadcast_message(agent_graph_walker) {
     # sends a single message and an optional ignore list to be sent to every session_id known to the agent
     # the structure of the message is as follows:
 

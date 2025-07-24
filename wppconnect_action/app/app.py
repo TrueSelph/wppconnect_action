@@ -126,13 +126,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 st.error(f"Import failed: {e}")
 
     with st.expander("Purge Outbox", False):
-        item_id = st.text_input(
+        job_id = st.text_input(
             "Item ID to purge",
             value="",
             key=f"{model_key}_item_id",
         )
 
-        if item_id:
+        if job_id:
             button_text = "Yes, Purge outbox item"
             message = "Outbox item purged successfully"
             confirm_message = "Are you sure you want to purge the outbox item? This action cannot be undone."
@@ -160,7 +160,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         agent_id,
                         module_root,
                         "purge_outbox",
-                        {"item_id": item_id},
+                        {"job_id": job_id},
                     )
                     st.session_state.purge_outbox_item = purge_outbox_item
                     st.session_state.confirm_purge_collection = False

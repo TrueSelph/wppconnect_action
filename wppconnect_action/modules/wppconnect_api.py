@@ -4,6 +4,8 @@ import base64
 import logging
 import mimetypes
 import os
+import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import filetype
@@ -1062,3 +1064,48 @@ class WPPConnectAPI:
     def get_metrics(self) -> dict:
         """GET /metrics"""
         return self.send_rest_request("/metrics", method="GET")
+
+    def list_files_in_folder(self, directory: str, within_seconds: int = 0) -> List[str]:
+        """
+        Returns filenames created within the last X seconds.
+
+        Args:
+            directory: Path to scan
+            within_seconds: Files created within this time window (seconds)
+
+        Returns:
+            List of filenames created recently
+        """
+        dir_path = Path(directory)
+
+        # Create the directory if it doesn't exist
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+        if not dir_path.is_dir():
+            raise ValueError(f"Directory not found: {directory}")
+
+        current_time = time.time()
+        recent_files = []
+
+        for file in dir_path.iterdir():
+            if file.is_file():
+                if within_seconds > 0:
+                    # Get creation time
+                    if os.name == "nt":  # Windows
+                        created = os.path.getctime(file)
+                    else:  # Mac/Linux
+                        stat = file.stat()
+                        created = (
+                            stat.st_birthtime
+                            if hasattr(stat, "st_birthtime")
+                            else stat.st_ctime
+                        )
+
+                    # Check if created within time window
+                    if (current_time - created) <= within_seconds:
+                        recent_files.append(file.name)
+                else:
+                    recent_files.append(file.name)
+
+        return recent_files
+
