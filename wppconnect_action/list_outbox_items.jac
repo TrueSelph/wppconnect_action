@@ -20,7 +20,7 @@ walker list_outbox_items(agent_graph_walker) {
 
     obj __specs__ {
         # make this walker visible in API
-        static has private: bool = False;
+        static has private: bool = True;
     }
 
     can on_agent with Agent entry {

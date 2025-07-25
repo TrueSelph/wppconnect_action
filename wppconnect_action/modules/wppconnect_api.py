@@ -1065,7 +1065,9 @@ class WPPConnectAPI:
         """GET /metrics"""
         return self.send_rest_request("/metrics", method="GET")
 
-    def list_files_in_folder(self, directory: str, within_seconds: int = 0) -> List[str]:
+    def list_files_in_folder(
+        self, directory: str, within_seconds: int = 0
+    ) -> List[str]:
         """
         Returns filenames created within the last X seconds.
 
@@ -1108,4 +1110,3 @@ class WPPConnectAPI:
                     recent_files.append(file.name)
 
         return recent_files
-
