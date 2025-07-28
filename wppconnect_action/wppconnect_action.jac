@@ -276,9 +276,9 @@ node WPPConnectAction :Action: {
                     }
 
                 }elif(file_type.get('file_type') in ["document", "video", "unknown"]) {
-                    result = self.api().send_file(phone= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content);
+                    result = self.api().send_file(phone= session_id, file_url=message.data.get('url'), filename=message.data.get('file_name'), caption = content, is_group=is_group);
                 } elif(file_type.get('file_type') == "image") {
-                    result = self.api().send_image(phone=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content);
+                    result = self.api().send_image(phone=session_id, file_url= message.data.get('url'), filename=message.data.get('file_name'), caption = content, is_group=is_group);
                 }
             } elif(message.get_type() == MessageType.MULTI.value) {
                 for message_item in message.get_content_items() {
@@ -310,9 +310,9 @@ node WPPConnectAction :Action: {
                                 result["internal_poll_group_id"] = poll_group_id; # add the poll group id to the result
                             }
                         }elif(file_type.get('file_type') in ["document", "video", "unknown"]) {
-                            result = self.api().send_file(phone= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
+                            result = self.api().send_file(phone= session_id, file_url=message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content, is_group=is_group);
                         } elif(file_type.get('file_type') == "image") {
-                            result = self.api().send_image(phone=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content);
+                            result = self.api().send_image(phone=session_id, file_url= message_item.data.get('url'), filename=message_item.data.get('file_name'), caption = content, is_group=is_group);
                         }
                     }
                 }

@@ -111,3 +111,4 @@ poll_im.data = {
 
 ## 0.0.17
 - update job id
+- add missing is_group to send media message
