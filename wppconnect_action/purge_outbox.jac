@@ -7,7 +7,7 @@ import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker
 
 walker purge_outbox :interact_graph_walker: {
 
-    has item_id:str = "";
+    has job_id:str = "";
     has response:dict = {};
 
 
@@ -28,7 +28,7 @@ walker purge_outbox :interact_graph_walker: {
     }
 
     can on_action with Action entry {
-        self.response = here.purge_outbox(item_id=self.item_id);
+        self.response = here.purge_outbox(job_id=self.job_id);
     }
 
 }
