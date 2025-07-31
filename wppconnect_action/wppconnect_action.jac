@@ -13,8 +13,6 @@ import from actions.jivas.wppconnect_action.outbox { Outbox }
 import from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
 import from actions.jivas.wppconnect_action.job { Job }
 import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
-
-import from jvserve.lib.agent_interface { encrypt_webhook_key_exec }
 import from jivas.agent.modules.agentlib.utils { Utils }
 import from jivas.agent.memory.collection { Collection }
 import from jivas.agent.action.action { Action }
@@ -23,6 +21,7 @@ import from jivas.agent.memory.interaction_response {
 }
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 import from jivas.agent.core.graph_node { GraphNode }
+import from .wppconnect_interact { wppconnect_interact }
 
 
 node WPPConnectAction(Action) {
@@ -38,6 +37,7 @@ node WPPConnectAction(Action) {
     has base_url:str = ""; # Jivas Base URL
     # API settings
     has webhook_url:str = ""; # JIVAS webhook for WPPConnect
+    has webhook_token_expiry_days: int = 60; # the number of days for webhook token validity
     has request_timeout:float = 10.0; # the length of time this action waits for api to complete request
     has chunk_length:int = 1024; # max length of message to send
     has use_pushname:bool = True; # use the WhatsApp push name as the user name
@@ -188,42 +188,59 @@ node WPPConnectAction(Action) {
 
         result = {};
 
-        agent_id = self.get_agent().id;
-        module_root = self.get_module_root();
-        # generate webhook key
-        webhook_key = encrypt_webhook_key_exec(agent_id=agent_id, module_root=module_root, walker="wppconnect_interact");
+        # evaluate session status
+        status_result = self.api().status();
+        session_status = status_result.get("status", "").upper();
+        self.logger.warning(session_status);
+        # if connected, return session result details
+        if session_status == "CONNECTED" and self.webhook_url {
+            return self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = False);
+        }
 
-        if(self.base_url and self.api_url and webhook_key) {
-            # complete the full webhook url
-            self.webhook_url = f'{self.base_url}/action/webhook/{webhook_key}';
-            self.logger.debug(f'wppconnect webhook url: {self.webhook_url}');
+        if self.webhook_url {
+            # if we have a saved webhook, abort
+            return {};
+        }
 
-            result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True);
+        # if the session is not connected, proceed with re-registration with webhook
+        webhook_walker = wppconnect_interact(agent_id=self.get_agent().id);
+        callback_url = webhook_walker.get_callback_url(
+            base_url=self.base_url,
+            agent_id=self.get_agent().id,
+            expiration = self.webhook_token_expiry_days
+        );
 
-            if result is not None and result.get('status') != 'ERROR' {
-                # check if the response contains a valid token
-                if result.get('token') {
-                    self.token = result.get('token');
-                    # remove the token from the payload now that we've saved it
-                    del result['token'];
-                }
+        if not callback_url {
+            self.logger.error('unable to generate webhook url for WPPConnect, missing required parameters');
+            return {};
+        }
 
-                # attempt to set username
-                if(self.sync_pushname) {
-                    self.api().change_username(self.get_agent().name);
-                }
+        # update the webhook URL
+        self.webhook_url = callback_url;
+        # complete the full webhook url
+        self.logger.debug(f'wppconnect webhook url: {callback_url}');
+        result = self.api().register_session(webhook_url = callback_url, wait_qr_code = True);
 
-                # if there is an avatar set this as well
-                if( self.sync_avatar and (avatar_action := self.get_agent().get_action('AvatarAction')) ) {
-                    if avatar_base64 := avatar_action.get_avatar_image(with_prefix=False) {
-                        avatar_bytes = base64.b64decode(avatar_base64);
-                        self.api().set_profile_pic(file_data=avatar_bytes);
-                    }
-                }
+        if result is not None and result.get('status') != 'ERROR' {
+            # check if the response contains a valid token
+            if result.get('token') {
+                self.token = result.get('token');
+                # remove the token from the payload now that we've saved it
+                del result['token'];
             }
 
-        } else {
-            self.logger.error('unable to generate webhook url for WPPConnect, missing required parameters');
+            # attempt to set username
+            if(self.sync_pushname) {
+                self.api().change_username(self.get_agent().name);
+            }
+
+            # if there is an avatar set this as well
+            if( self.sync_avatar and (avatar_action := self.get_agent().get_action('AvatarAction')) ) {
+                if avatar_base64 := avatar_action.get_avatar_image(with_prefix=False) {
+                    avatar_bytes = base64.b64decode(avatar_base64);
+                    self.api().set_profile_pic(file_data=avatar_bytes);
+                }
+            }
         }
 
         return result;
