@@ -37,7 +37,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         ):
             # Call the function to purge
             result = call_api(
-                endpoint="walker/wppconnect_action/export_outbox",
+                endpoint="action/walker/wppconnect_action/export_outbox",
                 json_data={"agent_id": agent_id},
             )
 
@@ -120,7 +120,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     outbox = data_to_import.get("outbox", data_to_import)
 
                     result = call_api(
-                        endpoint="walker/wppconnect_action/import_outbox",
+                        endpoint="action/walker/wppconnect_action/import_outbox",
                         json_data={
                             "agent_id": agent_id,
                             "outbox": outbox,
@@ -168,7 +168,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             with col1:
                 if st.button(button_text):
                     result = call_api(
-                        endpoint="walker/wppconnect_action/purge_outbox",
+                        endpoint="action/walker/wppconnect_action/purge_outbox",
                         json_data={"agent_id": agent_id, "job_id": job_id},
                     )
                     if result and result.status_code == 200:
@@ -210,7 +210,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         st.session_state[session_payload_key] = {}
 
         result = call_api(
-            endpoint="walker/wppconnect_action/register_session",
+            endpoint="action/walker/wppconnect_action/register_session",
             json_data={"agent_id": agent_id},
         )
         if result and result.status_code == 200:
@@ -220,7 +220,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     def logout_wppconnect() -> None:
         """Logout session state."""
         result = call_api(
-            endpoint="walker/wppconnect_action/logout_session",
+            endpoint="action/walker/wppconnect_action/logout_session",
             json_data={"agent_id": agent_id},
         )
         if result and result.status_code == 200:
@@ -229,7 +229,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     def close_wppconnect() -> None:
         """Close session state."""
         result = call_api(
-            endpoint="walker/wppconnect_action/close_session",
+            endpoint="action/walker/wppconnect_action/close_session",
             json_data={"agent_id": agent_id},
         )
         if result and result.status_code == 200:
@@ -423,7 +423,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         # Fetch documents with pagination parameters
         result = call_api(
-            endpoint="walker/wppconnect_action/list_outbox_items", json_data=args
+            endpoint="action/walker/wppconnect_action/list_outbox_items", json_data=args
         )
 
         if result.status_code == 200:
