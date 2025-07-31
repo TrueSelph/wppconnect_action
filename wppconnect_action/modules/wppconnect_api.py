@@ -395,14 +395,25 @@ class WPPConnectAPI:
     def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
         """POST /start-session"""
         data = {"webhook": webhook, "waitQrCode": wait_qr_code}
-        return self.send_rest_request("start-session", data=data)
+        result = self.send_rest_request("start-session", data=data)
+        if result.get("status"):
+            return result
+        else:
+            result = self.send_rest_request("start-session", data=data)
+            return result
 
     def close_session(self) -> dict:
         """POST /close-session"""
-        return self.send_rest_request("close-session")
+        result = self.send_rest_request("close-session")
+        if result.get("status"):
+            return result
+        else:
+            result = self.send_rest_request("close-session")
+            return result
 
     def logout_session(self) -> None:
         """POST /logout-session"""
+        self.close_session()
         self.send_rest_request("logout-session")
 
     def qrcode(self) -> dict:

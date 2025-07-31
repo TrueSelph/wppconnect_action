@@ -13,7 +13,9 @@ import from actions.jivas.wppconnect_action.outbox { Outbox }
 import from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
 import from actions.jivas.wppconnect_action.job { Job }
 import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
-import from jivas.agent.modules.agentlib.utils { Utils }
+
+import from jivas.agent.modules.text.chunking { chunk_long_message }
+
 import from jivas.agent.memory.collection { Collection }
 import from jivas.agent.action.action { Action }
 import from jivas.agent.memory.interaction_response {
@@ -191,35 +193,32 @@ node WPPConnectAction(Action) {
         # evaluate session status
         status_result = self.api().status();
         session_status = status_result.get("status", "").upper();
-        self.logger.warning(session_status);
         # if connected, return session result details
         if session_status == "CONNECTED" and self.webhook_url {
             return self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = False);
         }
 
-        if self.webhook_url {
-            # if we have a saved webhook, abort
-            return {};
+        if not self.webhook_url {
+            # if the session is not connected, proceed with re-registration with webhook
+            webhook_walker = wppconnect_interact(agent_id=self.get_agent().id);
+            callback_url = webhook_walker.get_callback_url(
+                base_url=self.base_url,
+                agent_id=self.get_agent().id,
+                expiration = self.webhook_token_expiry_days
+            );
+
+            if not callback_url {
+                self.logger.error('unable to generate webhook url for WPPConnect, missing required parameters');
+                return {};
+            }
+            # update the webhook URL
+            self.webhook_url = callback_url;
+            # complete the full webhook url
+            self.logger.debug(f'wppconnect webhook url: {callback_url}');
+
         }
 
-        # if the session is not connected, proceed with re-registration with webhook
-        webhook_walker = wppconnect_interact(agent_id=self.get_agent().id);
-        callback_url = webhook_walker.get_callback_url(
-            base_url=self.base_url,
-            agent_id=self.get_agent().id,
-            expiration = self.webhook_token_expiry_days
-        );
-
-        if not callback_url {
-            self.logger.error('unable to generate webhook url for WPPConnect, missing required parameters');
-            return {};
-        }
-
-        # update the webhook URL
-        self.webhook_url = callback_url;
-        # complete the full webhook url
-        self.logger.debug(f'wppconnect webhook url: {callback_url}');
-        result = self.api().register_session(webhook_url = callback_url, wait_qr_code = True);
+        result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True);
 
         if result is not None and result.get('status') != 'ERROR' {
             # check if the response contains a valid token
@@ -268,7 +267,7 @@ node WPPConnectAction(Action) {
             if (message.get_type() == MessageType.SILENCE.value) {}
             elif(message.get_type() == MessageType.TEXT.value) {
                 content = self.sanitize_message(message = message.get_content());
-                outgoing = Utils.chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
+                outgoing = chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
 
                 for chunk in outgoing {
                     result = self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
@@ -306,7 +305,7 @@ node WPPConnectAction(Action) {
                 for message_item in message.get_content_items() {
                     if(message_item.get_type() == MessageType.TEXT.value) {
                         content = self.sanitize_message(message = message_item.get_content());
-                        outgoing = Utils.chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
+                        outgoing = chunk_long_message(message=content, max_length = self.chunk_length, chunk_length = self.chunk_length);
                         for chunk in outgoing {
                             result = self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
                         }
@@ -848,7 +847,7 @@ node WPPConnectAction(Action) {
         return job_count;
     }
 
-    def list_outbox_items(page:int, limit:int, filtered_status:str = "", filtered_job_id:str = "") -> list[dict] {
+    def list_outbox_items(page:int, limit:int, filtered_status:list = [], filtered_job_id:list = []) -> dict {
         # Lists all document entries in the manifest with pagination.
 
         collection = self.get_collection();

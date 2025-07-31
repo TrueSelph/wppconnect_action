@@ -5,7 +5,9 @@ import uuid;
 import base64;
 import mimetypes;
 import from logging { Logger }
-import from jivas.agent.modules.agentlib.utils { Utils }
+
+import from jivas.agent.modules.action.path { action_webhook_path }
+
 import from .modules.wppconnect_api { WPPConnectAPI }
 import from jivas.agent.core.agent { Agent }
 import from jivas.agent.memory.frame { Frame }
@@ -25,7 +27,7 @@ walker wppconnect_interact(action_webhook_walker) {
     # set up walker as webhook
     class __specs__(action_webhook_walker.__specs__) {
         static has private: bool = False; # make it public
-        static has path: str = Utils.action_webhook_path(__module__);
+        static has path: str = action_webhook_path(__module__);
     }
 
     can on_agent with Agent entry {
