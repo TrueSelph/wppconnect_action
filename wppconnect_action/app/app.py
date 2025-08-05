@@ -7,7 +7,7 @@ from contextlib import suppress
 import pandas as pd
 import streamlit as st
 import yaml
-from jvclient.lib.utils import call_api
+from jvclient.lib.utils import call_api, get_reports_payload
 from jvclient.lib.widgets import app_controls, app_header, app_update_action
 from streamlit_router import StreamlitRouter
 
@@ -42,8 +42,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             )
 
             if result and result.status_code == 200:
-                json_result = result.json()
-                outbox_result = json_result.get("reports", [{}])[0]
+                outbox_result = get_reports_payload(result)
 
                 if outbox_result:
                     st.download_button(
@@ -172,8 +171,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         json_data={"agent_id": agent_id, "job_id": job_id},
                     )
                     if result and result.status_code == 200:
-                        json_result = result.json()
-                        purge_outbox_item = json_result.get("reports", [{}])[0]
+                        purge_outbox_item = get_reports_payload(result)
 
                         st.session_state.purge_outbox_item = purge_outbox_item
                         st.session_state.confirm_purge_collection = False
@@ -214,8 +212,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             json_data={"agent_id": agent_id},
         )
         if result and result.status_code == 200:
-            json_result = result.json()
-            st.session_state[session_payload_key] = json_result.get("reports", [{}])[0]
+            result = get_reports_payload(result)
+            st.session_state[session_payload_key] = result
 
     def logout_wppconnect() -> None:
         """Logout session state."""
@@ -427,8 +425,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         )
 
         if result.status_code == 200:
-            json_result = result.json()
-            data = json_result.get("reports", [{}])[0]
+            data = get_reports_payload(result)
 
             # Use the total_items from the API response, not the length of current items
             total_items = data.get("total_items", 0)

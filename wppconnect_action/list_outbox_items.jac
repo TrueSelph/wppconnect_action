@@ -16,7 +16,7 @@ walker list_outbox_items(agent_graph_walker) {
     has filtered_status:list = [];
     has filtered_job_id:list = [];
     has response:dict = {};
-    has reporting: bool = True;
+    has reporting:bool = True;
 
 
     # set up logger

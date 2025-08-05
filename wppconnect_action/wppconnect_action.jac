@@ -214,9 +214,9 @@ node WPPConnectAction(Action) {
             # update the webhook URL
             self.webhook_url = callback_url;
             # complete the full webhook url
-            self.logger.debug(f'wppconnect webhook url: {callback_url}');
 
         }
+        self.logger.debug(f'wppconnect webhook url: {self.webhook_url}');
 
         result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True);
 

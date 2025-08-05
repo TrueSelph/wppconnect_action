@@ -11,7 +11,7 @@ import from jivas.agent.core.agent { Agent }
 walker get_qrcode(agent_graph_walker) {
 
     has response:dict = {};
-    has reporting: bool = True;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);

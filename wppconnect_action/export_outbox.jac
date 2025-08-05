@@ -12,7 +12,7 @@ import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
 walker export_outbox(agent_graph_walker) {
 
     has response:dict = {};
-    has reporting: bool = True;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);

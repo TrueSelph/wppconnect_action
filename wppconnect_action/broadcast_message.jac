@@ -85,7 +85,7 @@ walker broadcast_message(agent_graph_walker) {
     has message:dict = {};
     has ignore_list:list = [];
     has response:str = '';
-    has reporting: bool = True;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);

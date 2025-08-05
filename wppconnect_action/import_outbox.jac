@@ -14,7 +14,7 @@ walker import_outbox(agent_graph_walker) {
     has response:bool = False;
     has outbox:dict = {};
     has purge_collection:bool = False;
-    has reporting: bool = True;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
