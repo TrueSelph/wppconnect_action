@@ -203,13 +203,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     # Unique keys in session state for button control and data
     session_payload_key = "wppconnect_payload"
 
-    def get_wppconnect_status() -> None:
+    def get_wppconnect_status(auto_register: bool = False) -> None:
         """Call and store the latest status in session state."""
         st.session_state[session_payload_key] = {}
 
         result = call_api(
             endpoint="action/walker/wppconnect_action/register_session",
-            json_data={"agent_id": agent_id},
+            json_data={"agent_id": agent_id, "auto_register": auto_register},
         )
         if result and result.status_code == 200:
             result = get_reports_payload(result)
@@ -249,7 +249,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             )
             if st.button("Refresh", key="refresh_registration_btn"):
                 with st.spinner("Refreshing session..."):
-                    get_wppconnect_status()
+                    get_wppconnect_status(auto_register=True)
                     st.rerun()
             st.stop()
 
@@ -306,8 +306,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         elif (
             result.get("status") == "INITIALIZING"
-            and not result.get("details").get("qrcode")
-            or result.get("status") == "AWAITING_QRSCAN"
+            or result.get("status") == "AWAITING_QR_SCAN"
             and not result.get("qrcode")
         ):
             # Status is INITIALIZING and qrcode is not ready
@@ -321,7 +320,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             with col1:
                 if st.button("Refresh", key="init_refresh_session_btn"):
                     with st.spinner("Refreshing session..."):
-                        get_wppconnect_status()
+                        get_wppconnect_status(auto_register=True)
                         st.rerun()
 
             with col2:
@@ -340,8 +339,6 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         else:
 
             qrcode = result.get("qrcode", "")
-            if not qrcode:
-                qrcode = result.get("details", {}).get("qrcode")
 
             if not qrcode:
                 # Status is not CONNECTED and qrcode is missing or empty
@@ -355,7 +352,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 with col1:
                     if st.button("Start", key="not_qr_start_session_btn"):
                         with st.spinner("Starting session..."):
-                            get_wppconnect_status()
+                            get_wppconnect_status(auto_register=True)
                             st.rerun()
 
             else:
@@ -384,7 +381,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 with col1:
                     if st.button("Refresh", key="refresh_qr_btn"):
                         with st.spinner("Refreshing QR code..."):
-                            get_wppconnect_status()
+                            get_wppconnect_status(auto_register=True)
                             st.rerun()
 
                 with col2:

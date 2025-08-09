@@ -91,11 +91,11 @@ node WPPConnectAction(Action) {
             agent_name = agent_name.replace("-", "_");
             self.session = agent_name;
         }
-
-        self.register_session();
     }
 
     def post_register() {
+        self.webhook_url = "";
+        self.register_session(auto_register=True);
         # post register procedure to start the outbox scheduler
         self.start_outbox_scheduler();
     }
@@ -185,7 +185,7 @@ node WPPConnectAction(Action) {
 
     }
 
-    def register_session() -> dict {
+    def register_session(auto_register:bool = False) -> dict {
         # setup procedure for webhook registration on api
 
         result = {};
@@ -214,11 +214,9 @@ node WPPConnectAction(Action) {
             # update the webhook URL
             self.webhook_url = callback_url;
             # complete the full webhook url
-
+            self.logger.debug(f'wppconnect webhook url: {self.webhook_url}');
         }
-        self.logger.debug(f'wppconnect webhook url: {self.webhook_url}');
-
-        result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True);
+        result = self.api().register_session(webhook_url = self.webhook_url, wait_qr_code = True, auto_register = auto_register);
 
         if result is not None and result.get('status') != 'ERROR' {
             # check if the response contains a valid token
@@ -227,17 +225,18 @@ node WPPConnectAction(Action) {
                 # remove the token from the payload now that we've saved it
                 del result['token'];
             }
+            if result.get("status") == "CONNECTED" {
+                # attempt to set username
+                if(self.sync_pushname) {
+                    self.api().change_username(self.get_agent().name);
+                }
 
-            # attempt to set username
-            if(self.sync_pushname) {
-                self.api().change_username(self.get_agent().name);
-            }
-
-            # if there is an avatar set this as well
-            if( self.sync_avatar and (avatar_action := self.get_agent().get_action('AvatarAction')) ) {
-                if avatar_base64 := avatar_action.get_avatar_image(with_prefix=False) {
-                    avatar_bytes = base64.b64decode(avatar_base64);
-                    self.api().set_profile_pic(file_data=avatar_bytes);
+                # if there is an avatar set this as well
+                if( self.sync_avatar and (avatar_action := self.get_agent().get_action('AvatarAction')) ) {
+                    if avatar_base64 := avatar_action.get_avatar_image(with_prefix=False) {
+                        avatar_bytes = base64.b64decode(avatar_base64);
+                        self.api().set_profile_pic(file_data=avatar_bytes);
+                    }
                 }
             }
         }

@@ -297,7 +297,7 @@ class WPPConnectAPI:
         return {"file_type": "unknown", "mime": detected_mime_type}
 
     def register_session(
-        self, webhook_url: str = "", wait_qr_code: bool = True
+        self, webhook_url: str = "", wait_qr_code: bool = True, auto_register: bool = True
     ) -> dict:
         """
         Initializes the WPPConnect session:
@@ -309,37 +309,49 @@ class WPPConnectAPI:
         # 1. Get session status
         status_resp = self.status()
         status = status_resp.get("status", "").upper()
+        # Optionally generate instance/token if needed
+        if "Unauthorized" in str(status_resp.get("error", "")) or status == "":
+            # This corresponds to a missing/invalid token, so attempt to create instance/token
+            create_res = self.create_session()
+            if not create_res.get("token"):
+                return {
+                    "status": "ERROR",
+                    "message": "Could not create instance or get token.",
+                    "details": create_res,
+                }
+            self.token = create_res["token"]
+            
+            status_resp = self.status()
+            status = status_resp.get("status", "").upper()
 
         # These status keys may vary depending on your WPPConnect version
         # Active/connected session
         if status == "CONNECTED":
-            # Get the host device info/number
-            device_info = self.get_host_device()
-            return {
-                "status": "CONNECTED",
-                "message": "Session is already active and connected.",
-                "device": device_info,
-                "session": self.session,
-                "token": self.token,
-            }
-        # Some deployments may say "QRCODE" or "DISCONNECTED" or "CLOSED"
-        elif status in {"QRCODE", "DISCONNECTED", "CLOSED", ""}:
-            # Optionally generate instance/token if needed
-            if "Unauthorized" in str(status_resp.get("error", "")) or status == "":
-                # This corresponds to a missing/invalid token, so attempt to create instance/token
-                create_res = self.create_session()
-                if not create_res.get("token"):
-                    return {
-                        "status": "ERROR",
-                        "message": "Could not create instance or get token.",
-                        "details": create_res,
-                    }
-                self.token = create_res["token"]
+            
 
+            # start session with new webhook
+            start_res = self.start_session(
+                webhook=webhook_url, wait_qr_code=wait_qr_code
+            )
+
+            if start_res.get("status") == "CONNECTED":
+                # Get the host device info/number
+                device_info = self.get_host_device()
+                return {
+                    "status": "CONNECTED",
+                    "message": "Session is already active and connected.",
+                    "device": device_info,
+                    "session": self.session,
+                    "token": self.token,
+                }
+            return start_res
+        # Some deployments may say "QRCODE" or "DISCONNECTED" or "CLOSED"
+        elif status in {"QRCODE", "DISCONNECTED", "CLOSED", ""} and auto_register:
             # Start the session, register webhook, and request QR code
             start_res = self.start_session(
                 webhook=webhook_url, wait_qr_code=wait_qr_code
             )
+
             if start_res.get("qrcode"):
                 # Some deployments return QR code directly
                 qrcode_b64 = start_res["qrcode"]
@@ -347,8 +359,9 @@ class WPPConnectAPI:
                 # Otherwise, get it from /qrcode-session
                 qr_resp = self.qrcode()
                 qrcode_b64 = qr_resp.get("qrcode")
+
             return {
-                "status": "AWAITING_QRSCAN",
+                "status": "AWAITING_QR_SCAN",
                 "message": "Session created or started. Awaiting QR Code scan.",
                 "qrcode": qrcode_b64,
                 "session": self.session,
@@ -360,6 +373,7 @@ class WPPConnectAPI:
             "status": status,
             "message": f"Session status: {status}",
             "details": status_resp,
+            "qrcode": status_resp.get("qrcode"),
         }
 
     # 1. Instance/session related
@@ -404,16 +418,11 @@ class WPPConnectAPI:
 
     def close_session(self) -> dict:
         """POST /close-session"""
-        result = self.send_rest_request("close-session")
-        if result.get("status"):
-            return result
-        else:
-            result = self.send_rest_request("close-session")
-            return result
+        return self.send_rest_request("close-session")
 
     def logout_session(self) -> None:
         """POST /logout-session"""
-        self.close_session()
+        # fist logout close second
         self.send_rest_request("logout-session")
 
     def qrcode(self) -> dict:

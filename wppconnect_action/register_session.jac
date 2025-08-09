@@ -12,6 +12,7 @@ walker register_session(agent_graph_walker) {
 
     has response: dict = {};
     has reporting: bool = True;
+    has auto_register: bool = False;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -30,7 +31,7 @@ walker register_session(agent_graph_walker) {
     }
 
     can on_action with Action entry {
-        self.response = here.register_session();
+        self.response = here.register_session(auto_register = self.auto_register);
         if self.reporting {
             report self.response;
         }
