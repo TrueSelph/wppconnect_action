@@ -217,6 +217,7 @@ walker wppconnect_interact(action_webhook_walker) {
                 quoted_message_directive = f"Use the quoted message as context when responding to my reply.  Quoted message: '{quoted_message}' Reply: '{content}'";
                 interaction_node = frame_node.add_interaction(utterance = content, channel = "whatsapp");
                 interaction_node.add_directive(quoted_message_directive);
+                interaction_node.add_event(f"PARENT MESSAGE: {quoted_message}");
             }
 
             message = (root spawn interact(

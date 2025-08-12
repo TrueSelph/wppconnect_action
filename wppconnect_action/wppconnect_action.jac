@@ -199,6 +199,9 @@ node WPPConnectAction(Action) {
         }
 
         if not self.webhook_url {
+            if session_status == "CONNECTED" {
+                self.api().close_session();
+            }
             # if the session is not connected, proceed with re-registration with webhook
             webhook_walker = wppconnect_interact(agent_id=self.get_agent().id);
             callback_url = webhook_walker.get_callback_url(
