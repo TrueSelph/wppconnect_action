@@ -297,7 +297,10 @@ class WPPConnectAPI:
         return {"file_type": "unknown", "mime": detected_mime_type}
 
     def register_session(
-        self, webhook_url: str = "", wait_qr_code: bool = True, auto_register: bool = True
+        self,
+        webhook_url: str = "",
+        wait_qr_code: bool = True,
+        auto_register: bool = True,
     ) -> dict:
         """
         Initializes the WPPConnect session:
@@ -320,14 +323,13 @@ class WPPConnectAPI:
                     "details": create_res,
                 }
             self.token = create_res["token"]
-            
+
             status_resp = self.status()
             status = status_resp.get("status", "").upper()
 
         # These status keys may vary depending on your WPPConnect version
         # Active/connected session
         if status == "CONNECTED":
-            
 
             # start session with new webhook
             start_res = self.start_session(
