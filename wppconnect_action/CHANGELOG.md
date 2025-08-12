@@ -106,6 +106,13 @@ poll_im.data = {
 ## 0.0.15
 - Update action to store outbox in collection.
 
+## 0.0.16
+- add missing status to add_outbox_job
+
+## 0.0.17
+- update job id
+- add missing is_group to send media message
+
 ## 0.1.0
 - Updated to support Jivas 2.1.0
 

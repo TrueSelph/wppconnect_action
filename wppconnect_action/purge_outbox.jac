@@ -3,10 +3,9 @@ import from logging { Logger }
 import from jivas.agent.core.agent { Agent }
 import from jivas.agent.action.action { Action }
 import from jivas.agent.action.actions { Actions }
-
 import from jivas.agent.modules.action.path { action_walker_path }
-
 import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
+
 
 walker purge_outbox(agent_graph_walker) {
 
@@ -32,6 +31,7 @@ walker purge_outbox(agent_graph_walker) {
 
     can on_action with Action entry {
         self.response = here.purge_outbox(job_id=self.job_id);
+
         if self.reporting {
             report self.response;
         }
