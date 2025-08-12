@@ -1119,11 +1119,13 @@ class WPPConnectAPI:
                         created = os.path.getctime(file)
                     else:  # Mac/Linux
                         stat = file.stat()
-                        created = (
-                            stat.st_birthtime
-                            if hasattr(stat, "st_birthtime")
-                            else stat.st_ctime
-                        )
+                        # created = (
+                        #     stat.st_birthtime
+                        #     if hasattr(stat, "st_birthtime")
+                        #     else stat.st_ctime
+                        # )
+                        # Use getattr with a default value instead of hasattr
+                        created = getattr(stat, "st_birthtime", stat.st_ctime)
 
                     # Check if created within time window
                     if (current_time - created) <= within_seconds:
