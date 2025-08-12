@@ -1,17 +1,26 @@
-import:py logging;
-import:py from logging { Logger }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.actions { Actions }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import from logging { Logger }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+
+import from jivas.agent.modules.action.path { action_walker_path }
+
+import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
 
 
-walker export_outbox :interact_graph_walker: {
+walker export_outbox(agent_graph_walker) {
 
-    has response:bool = False;
+    has response:dict = {};
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
+
+    class __specs__ {
+        static has private: bool = False;
+        static has path: str = action_walker_path(__module__);
+    }
 
     can on_agent with Agent entry {
         visit [-->](`?Actions);
@@ -23,6 +32,9 @@ walker export_outbox :interact_graph_walker: {
 
     can on_action with Action entry {
         self.response = here.get_jobs();
+        if self.reporting {
+            report self.response;
+        }
     }
 
 }
