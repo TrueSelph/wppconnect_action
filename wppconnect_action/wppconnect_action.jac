@@ -944,7 +944,7 @@ walker _delete_job {
 }
 
 walker _add_job_collection {
-    has collection_id:str = None;
+    has collection_id:str = "";
     has outbox_item:OutboxItem = None;
     has job_id:str = "";
     has item_id:str = "";
