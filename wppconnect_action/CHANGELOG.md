@@ -121,3 +121,6 @@ poll_im.data = {
 
 ## 0.1.2
 - Pass parent message using event
+
+## 0.1.3
+- Add collection_id to outbox

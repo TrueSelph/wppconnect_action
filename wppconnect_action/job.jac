@@ -3,6 +3,7 @@ import from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
 
 
 node Job(GraphNode) {
+    has collection_id:str = "";
     has job_id:str = "";
     has callback_url:str = "";
     has created_at:str = "";
