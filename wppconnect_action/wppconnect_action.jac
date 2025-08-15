@@ -24,6 +24,8 @@ import from jivas.agent.memory.interaction_response {
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 import from jivas.agent.core.graph_node { GraphNode }
 import from .wppconnect_interact { wppconnect_interact }
+import from jac_cloud.core.archetype {BaseCollection, NodeAnchor}
+import from jivas.agent.modules.data.node_pager { NodePager }
 
 
 node WPPConnectAction(Action) {
@@ -675,7 +677,7 @@ node WPPConnectAction(Action) {
         };
     }
 
-    def add_outbox_item(job_id: str, session_id: str, status: OutboxItemStatus = OutboxItemStatus.PENDING, message: InteractionMessage) {
+    def add_outbox_item(job_id: str, collection_id: str, session_id: str, status: OutboxItemStatus = OutboxItemStatus.PENDING, message: InteractionMessage) {
         # Adds validated item to specified job with type checking
 
         if not all([
@@ -688,7 +690,7 @@ node WPPConnectAction(Action) {
         }
 
         item_id = str(uuid.uuid4());
-        self.add_outbox_item_collection(status=status, job_id= job_id, item_id=item_id, session_id=session_id, message=message);
+        self.add_outbox_item_collection(status=status, collection_id=collection_id, job_id= job_id, item_id=item_id, session_id=session_id, message=message);
     }
 
     def maybe_trigger_callback(job_id:str, job:dict) {
@@ -755,9 +757,9 @@ node WPPConnectAction(Action) {
 
 
     # collection
-    def add_outbox_item_collection(status:OutboxItemStatus, job_id: str, item_id: str, session_id: str, message: InteractionMessage) -> Job {
+    def add_outbox_item_collection(status:OutboxItemStatus, collection_id: str, job_id: str, item_id: str, session_id: str, message: InteractionMessage) -> Job {
         collection = self.get_collection();
-        outbox_item = (collection spawn _add_job_collection(status=status, job_id=job_id, item_id=item_id, session_id=session_id, message=message)).outbox_item;
+        outbox_item = (collection spawn _add_job_collection(status=status, job_id=job_id, item_id=item_id, session_id=session_id, message=message, collection_id=collection_id)).outbox_item;
         if outbox_item {
             self.increment_job_count();
         }
@@ -794,13 +796,13 @@ node WPPConnectAction(Action) {
             # import outbox
             for (job_id, job_data) in outbox.items() {
                 for (item_id, job) in job_data['pending'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.PENDING, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                    self.add_outbox_item_collection(status=OutboxItemStatus.PENDING, collection_id=collection.id, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
                 for (item_id, job) in job_data['processed'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.PROCESSED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                    self.add_outbox_item_collection(status=OutboxItemStatus.PROCESSED, collection_id=collection.id, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
                 for (item_id, job) in job_data['failed'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.FAILED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                    self.add_outbox_item_collection(status=OutboxItemStatus.FAILED, collection_id=collection.id, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
             }
 
@@ -942,6 +944,7 @@ walker _delete_job {
 }
 
 walker _add_job_collection {
+    has collection_id:str = "";
     has outbox_item:OutboxItem = None;
     has job_id:str = "";
     has item_id:str = "";
@@ -956,7 +959,7 @@ walker _add_job_collection {
 
     can on_collection with Collection entry {
         visit [-->](`?Outbox) else {
-            outbox = Outbox();
+            outbox = Outbox(collection_id=self.collection_id);
             here ++> outbox;
             visit [-->](`?Outbox);
         }
@@ -964,7 +967,7 @@ walker _add_job_collection {
 
     can on_outbox with Outbox entry {
         visit [-->](`?Job)(?job_id == self.job_id) else {
-            job = Job(job_id=self.job_id);
+            job = Job(job_id=self.job_id, collection_id=self.collection_id);
             here ++> job;
 
             visit [-->](`?Job)(?job_id == self.job_id);
@@ -974,7 +977,7 @@ walker _add_job_collection {
     can on_job with Job entry {
         visit [-->](`?OutboxItem)(?item_id == self.item_id) else {
             date_now = datetime.now().isoformat();
-            self.outbox_item = OutboxItem(item_id=self.item_id, session_id=self.session_id, added_at=date_now, message=self.message, status=self.status);
+            self.outbox_item = OutboxItem(item_id=self.item_id, session_id=self.session_id, added_at=date_now, message=self.message, status=self.status, collection_id=self.collection_id);
             here ++> self.outbox_item;
             here.total = here.total + 1;
             here.created_at = date_now;
