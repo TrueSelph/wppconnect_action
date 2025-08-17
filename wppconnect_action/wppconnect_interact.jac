@@ -210,12 +210,12 @@ walker wppconnect_interact(action_webhook_walker) {
             # handle when user replies to a specific, previous message
             # the AI will need to have the quoted message as context along with the current message
             content = data['body'];
-
+            interaction_node = None;
             # handle text-based quoted messages for now
-            if( data.get("quoted_message") and (data.get("quoted_message", {}).get("type") == "chat") ) {
+             if( data.get("quoted_message") and (data.get("quoted_message", {}).get("type") == "chat") ) {
                 quoted_message = data.get("quoted_message").get("body");
                 quoted_message_directive = f"Use the quoted message as context when responding to my reply.  Quoted message: '{quoted_message}' Reply: '{content}'";
-                interaction_node = frame_node.add_interaction(utterance = content, channel = "whatsapp");
+                interaction_node = frame_node.create_interaction(utterance = content, channel = "whatsapp");
                 interaction_node.add_directive(quoted_message_directive);
                 interaction_node.add_event(f"PARENT MESSAGE: {quoted_message}");
             }
@@ -227,7 +227,8 @@ walker wppconnect_interact(action_webhook_walker) {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = {"whatsapp_chat": data}
+                data = {"label": "whatsapp_chat", "meta": {}, "content": data},
+                interaction_node = interaction_node
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);

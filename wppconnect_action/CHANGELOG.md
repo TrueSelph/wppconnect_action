@@ -124,3 +124,6 @@ poll_im.data = {
 
 ## 0.1.3
 - Add collection_id to outbox
+
+## 0.1.4
+- Updated for compat with Jivas 2.1.14
