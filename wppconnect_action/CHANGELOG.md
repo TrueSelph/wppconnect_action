@@ -11,7 +11,7 @@
 - Major Refactor of WPPConnectAPI, WPPConnectAction and action app.
 
 ### 0.0.5
-- Added behaviour to handle quoted messages as context in replies
+- Added behavior to handle quoted messages as context in replies
 - Updated action app, added refinements to make UI more usable
 
 ### 0.0.6
@@ -112,3 +112,18 @@ poll_im.data = {
 ## 0.0.17
 - update job id
 - add missing is_group to send media message
+
+## 0.1.0
+- Updated to support Jivas 2.1.0
+
+## 0.1.1
+- version bump
+
+## 0.1.2
+- Pass parent message using event
+
+## 0.1.3
+- Add collection_id to outbox
+
+## 0.1.4
+- Updated for compat with Jivas 2.1.14

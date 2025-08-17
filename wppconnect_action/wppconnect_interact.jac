@@ -1,42 +1,48 @@
-import:py logging;
-import:py os;
-import:py re;
-import:py uuid;
-import:py base64;
-import:py mimetypes;
-import:py from logging { Logger }
-import:py from jivas.agent.modules.agentlib.utils { Utils }
-import:py from .modules.wppconnect_api { WPPConnectAPI }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.memory.frame { Frame }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.interact { interact }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import os;
+import re;
+import uuid;
+import base64;
+import mimetypes;
+import from logging { Logger }
+
+import from jivas.agent.modules.action.path { action_webhook_path }
+
+import from .modules.wppconnect_api { WPPConnectAPI }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.memory.frame { Frame }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.interact { interact }
+import from jivas.agent.action.action_webhook_walker { action_webhook_walker }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
-walker wppconnect_interact :interact_graph_walker: {
+walker wppconnect_interact(action_webhook_walker) {
     # called via a webhook whenever there are verification requests or inbound messages
     # when activated, it will trigger the whatsapp interact action to communicate
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
 
-    has headers:dict = {};
-    # main param for incoming webhook data
-    has params:dict = {};
-    # main param for outgoing webhook data
-    has response:dict = {};
+    # set up walker as webhook
+    class __specs__(action_webhook_walker.__specs__) {
+        static has private: bool = False; # make it public
+        static has path: str = action_webhook_path(__module__);
+    }
 
     can on_agent with Agent entry {
 
+        # grab payload from webhook call
+        payload = self.get_request_json();
+
         # handle request here to ensure it's worth the walk
-        if(not self.params) {
+        if(not payload) {
             Jac.get_context().status = 200;
             disengage;
         }
 
         # parse data if we've gotten this far..
-        data = WPPConnectAPI.parse_inbound_message(request = self.params);
+        data = WPPConnectAPI.parse_inbound_message(request = payload);
 
         if(not data) {
             Jac.get_context().status = 200;
@@ -150,7 +156,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can is_directed_message(action_node:Action, data:dict) -> bool {
+    def is_directed_message(action_node:Action, data:dict) -> bool {
         # interprets the data to determine whether it's a direct group reply or valid direct chat with content
 
         if(data.get('isGroup')) {
@@ -194,8 +200,7 @@ walker wppconnect_interact :interact_graph_walker: {
         return True;
     }
 
-    can handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
-
+    def handle_chat_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         if(self.is_directed_message(action_node, data)) {
             # only respond if we have a message and if we are messaged with @ in groups
 
@@ -205,13 +210,14 @@ walker wppconnect_interact :interact_graph_walker: {
             # handle when user replies to a specific, previous message
             # the AI will need to have the quoted message as context along with the current message
             content = data['body'];
-
+            interaction_node = None;
             # handle text-based quoted messages for now
-            if( data.get("quoted_message") and (data.get("quoted_message", {}).get("type") == "chat") ) {
+             if( data.get("quoted_message") and (data.get("quoted_message", {}).get("type") == "chat") ) {
                 quoted_message = data.get("quoted_message").get("body");
                 quoted_message_directive = f"Use the quoted message as context when responding to my reply.  Quoted message: '{quoted_message}' Reply: '{content}'";
-                interaction_node = frame_node.add_interaction(utterance = content, channel = "whatsapp");
+                interaction_node = frame_node.create_interaction(utterance = content, channel = "whatsapp");
                 interaction_node.add_directive(quoted_message_directive);
+                interaction_node.add_event(f"PARENT MESSAGE: {quoted_message}");
             }
 
             message = (root spawn interact(
@@ -221,7 +227,8 @@ walker wppconnect_interact :interact_graph_walker: {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_chat", "meta": {}, "content": data}]
+                data = {"label": "whatsapp_chat", "meta": {}, "content": data},
+                interaction_node = interaction_node
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
@@ -231,7 +238,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_voicenote_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_voicenote_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # This action downloads the voicenote audio transcribes it and passes it to interact walker as text to be processed
 
         if(not data['author']) { # sidestep voicenotes in group chats
@@ -261,7 +268,7 @@ walker wppconnect_interact :interact_graph_walker: {
                     reporting = False,
                     tts = True,
                     channel = "whatsapp",
-                    data = [{"label": "whatsapp_voicenote", "meta": {"message_type": data['message_type']}, "content": data['media']}]
+                    data = {"whatsapp_voicenote": data['media']}
                 ));
             }
 
@@ -296,9 +303,19 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
+            # default utterance
+            interact_utterance = f'sent {data['message_type']} file in the chat';
+            existing_files_url = [];
+
+            # check for existing media
+            existing_media_url = action_node.get_wppconnect_recent_files(session_id=frame_node.session_id, seconds=action_node.recent_files_time_window);
+            if existing_media_url {
+                interact_utterance = "";
+            }
+
 
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
@@ -310,7 +327,7 @@ walker wppconnect_interact :interact_graph_walker: {
 
             # ensure the output filename is without whitespaces and slashes
             output_filename = f"wa_{str(uuid.uuid4())}_{name.replace(" ", "_").replace("/", "_").replace("\\", "_")}{extension}";
-            output_file_path = f"wpp/{output_filename}";
+            output_file_path = f"media/{frame_node.session_id}/{output_filename}";
 
             # save document to the file system
             action_node.save_file(output_file_path, file_data);
@@ -327,13 +344,13 @@ walker wppconnect_interact :interact_graph_walker: {
             data['media'] = file_url;
 
             message = (root spawn interact(
-                utterance = data['caption'] if data['caption'] else f'sent {data['message_type']} file in the chat',
+                utterance = data['caption'] if data['caption'] else interact_utterance,
                 agent_id = agent_node.id,
                 session_id = frame_node.session_id,
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
+                data = {"whatsapp_media": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
@@ -343,7 +360,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_poll_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_poll_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
 
@@ -357,7 +374,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_media", "meta": {}, "content": data}]
+                data = {"whatsapp_media": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
@@ -367,7 +384,7 @@ walker wppconnect_interact :interact_graph_walker: {
         }
     }
 
-    can handle_location_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
+    def handle_location_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
 
@@ -378,7 +395,7 @@ walker wppconnect_interact :interact_graph_walker: {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = [{"label": "whatsapp_location", "meta": {}, "content": data}]
+                data = {"whatsapp_location": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);

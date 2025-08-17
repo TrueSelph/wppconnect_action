@@ -4,6 +4,8 @@ import base64
 import logging
 import mimetypes
 import os
+import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import filetype
@@ -295,7 +297,10 @@ class WPPConnectAPI:
         return {"file_type": "unknown", "mime": detected_mime_type}
 
     def register_session(
-        self, webhook_url: str = "", wait_qr_code: bool = True
+        self,
+        webhook_url: str = "",
+        wait_qr_code: bool = True,
+        auto_register: bool = True,
     ) -> dict:
         """
         Initializes the WPPConnect session:
@@ -307,37 +312,48 @@ class WPPConnectAPI:
         # 1. Get session status
         status_resp = self.status()
         status = status_resp.get("status", "").upper()
+        # Optionally generate instance/token if needed
+        if "Unauthorized" in str(status_resp.get("error", "")) or status == "":
+            # This corresponds to a missing/invalid token, so attempt to create instance/token
+            create_res = self.create_session()
+            if not create_res.get("token"):
+                return {
+                    "status": "ERROR",
+                    "message": "Could not create instance or get token.",
+                    "details": create_res,
+                }
+            self.token = create_res["token"]
+
+            status_resp = self.status()
+            status = status_resp.get("status", "").upper()
 
         # These status keys may vary depending on your WPPConnect version
         # Active/connected session
         if status == "CONNECTED":
-            # Get the host device info/number
-            device_info = self.get_host_device()
-            return {
-                "status": "CONNECTED",
-                "message": "Session is already active and connected.",
-                "device": device_info,
-                "session": self.session,
-                "token": self.token,
-            }
-        # Some deployments may say "QRCODE" or "DISCONNECTED" or "CLOSED"
-        elif status in {"QRCODE", "DISCONNECTED", "CLOSED", ""}:
-            # Optionally generate instance/token if needed
-            if "Unauthorized" in str(status_resp.get("error", "")) or status == "":
-                # This corresponds to a missing/invalid token, so attempt to create instance/token
-                create_res = self.create_session()
-                if not create_res.get("token"):
-                    return {
-                        "status": "ERROR",
-                        "message": "Could not create instance or get token.",
-                        "details": create_res,
-                    }
-                self.token = create_res["token"]
 
+            # start session with new webhook
+            start_res = self.start_session(
+                webhook=webhook_url, wait_qr_code=wait_qr_code
+            )
+
+            if start_res.get("status") == "CONNECTED":
+                # Get the host device info/number
+                device_info = self.get_host_device()
+                return {
+                    "status": "CONNECTED",
+                    "message": "Session is already active and connected.",
+                    "device": device_info,
+                    "session": self.session,
+                    "token": self.token,
+                }
+            return start_res
+        # Some deployments may say "QRCODE" or "DISCONNECTED" or "CLOSED"
+        elif status in {"QRCODE", "DISCONNECTED", "CLOSED", ""} and auto_register:
             # Start the session, register webhook, and request QR code
             start_res = self.start_session(
                 webhook=webhook_url, wait_qr_code=wait_qr_code
             )
+
             if start_res.get("qrcode"):
                 # Some deployments return QR code directly
                 qrcode_b64 = start_res["qrcode"]
@@ -345,8 +361,9 @@ class WPPConnectAPI:
                 # Otherwise, get it from /qrcode-session
                 qr_resp = self.qrcode()
                 qrcode_b64 = qr_resp.get("qrcode")
+
             return {
-                "status": "AWAITING_QRSCAN",
+                "status": "AWAITING_QR_SCAN",
                 "message": "Session created or started. Awaiting QR Code scan.",
                 "qrcode": qrcode_b64,
                 "session": self.session,
@@ -358,6 +375,7 @@ class WPPConnectAPI:
             "status": status,
             "message": f"Session status: {status}",
             "details": status_resp,
+            "qrcode": status_resp.get("qrcode"),
         }
 
     # 1. Instance/session related
@@ -393,7 +411,12 @@ class WPPConnectAPI:
     def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
         """POST /start-session"""
         data = {"webhook": webhook, "waitQrCode": wait_qr_code}
-        return self.send_rest_request("start-session", data=data)
+        result = self.send_rest_request("start-session", data=data)
+        if result.get("status"):
+            return result
+        else:
+            result = self.send_rest_request("start-session", data=data)
+            return result
 
     def close_session(self) -> dict:
         """POST /close-session"""
@@ -401,6 +424,7 @@ class WPPConnectAPI:
 
     def logout_session(self) -> None:
         """POST /logout-session"""
+        # fist logout close second
         self.send_rest_request("logout-session")
 
     def qrcode(self) -> dict:
@@ -1062,3 +1086,51 @@ class WPPConnectAPI:
     def get_metrics(self) -> dict:
         """GET /metrics"""
         return self.send_rest_request("/metrics", method="GET")
+
+    def list_files_in_folder(
+        self, directory: str, within_seconds: int = 0
+    ) -> List[str]:
+        """
+        Returns filenames created within the last X seconds.
+
+        Args:
+            directory: Path to scan
+            within_seconds: Files created within this time window (seconds)
+
+        Returns:
+            List of filenames created recently
+        """
+        dir_path = Path(directory)
+
+        # Create the directory if it doesn't exist
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+        if not dir_path.is_dir():
+            raise ValueError(f"Directory not found: {directory}")
+
+        current_time = time.time()
+        recent_files = []
+
+        for file in dir_path.iterdir():
+            if file.is_file():
+                if within_seconds > 0:
+                    # Get creation time
+                    if os.name == "nt":  # Windows
+                        created = os.path.getctime(file)
+                    else:  # Mac/Linux
+                        stat = file.stat()
+                        # created = (
+                        #     stat.st_birthtime
+                        #     if hasattr(stat, "st_birthtime")
+                        #     else stat.st_ctime
+                        # )
+                        # Use getattr with a default value instead of hasattr
+                        created = getattr(stat, "st_birthtime", stat.st_ctime)
+
+                    # Check if created within time window
+                    if (current_time - created) <= within_seconds:
+                        recent_files.append(file.name)
+                else:
+                    recent_files.append(file.name)
+
+        return recent_files

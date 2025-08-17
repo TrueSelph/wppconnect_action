@@ -7,8 +7,8 @@ from contextlib import suppress
 import pandas as pd
 import streamlit as st
 import yaml
-from jvcli.client.lib.utils import call_action_walker_exec
-from jvcli.client.lib.widgets import app_controls, app_header, app_update_action
+from jvclient.lib.utils import call_api, get_reports_payload
+from jvclient.lib.widgets import app_controls, app_header, app_update_action
 from streamlit_router import StreamlitRouter
 
 
@@ -36,19 +36,27 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             disabled=(not agent_id),
         ):
             # Call the function to purge
-            if result := call_action_walker_exec(
-                agent_id, module_root, "export_outbox", {}
-            ):
-                if result:
-                    result = json.dumps(result, indent=2)
+            result = call_api(
+                endpoint="action/walker/wppconnect_action/export_outbox",
+                json_data={"agent_id": agent_id},
+            )
+
+            if result and result.status_code == 200:
+                outbox_result = get_reports_payload(result)
+
+                if outbox_result:
                     st.download_button(
                         label="Download Exported Outbox",
-                        data=result,
+                        data=json.dumps(outbox_result, indent=2),
                         file_name="exported_outbox.json",
                         mime="application/json",
                     )
                     st.success("Export outbox successfully")
-                    st.json(result)
+                    st.json(outbox_result)
+                else:
+                    st.error(
+                        "Failed to export outbox. Ensure that there is something to export"
+                    )
             else:
                 st.error(
                     "Failed to export putbox. Ensure that there is something to export"
@@ -110,13 +118,15 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     outbox = {}
                     outbox = data_to_import.get("outbox", data_to_import)
 
-                    result = call_action_walker_exec(
-                        agent_id,
-                        module_root,
-                        "import_outbox",
-                        {"outbox": outbox, "purge_collection": purge_collection},
+                    result = call_api(
+                        endpoint="action/walker/wppconnect_action/import_outbox",
+                        json_data={
+                            "agent_id": agent_id,
+                            "outbox": outbox,
+                            "purge_collection": purge_collection,
+                        },
                     )
-                    if result:
+                    if result and result.status_code == 200:
                         st.success("Import outbox successfully")
                     else:
                         st.error(
@@ -126,13 +136,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 st.error(f"Import failed: {e}")
 
     with st.expander("Purge Outbox", False):
-        item_id = st.text_input(
+        job_id = st.text_input(
             "Item ID to purge",
             value="",
             key=f"{model_key}_item_id",
         )
 
-        if item_id:
+        if job_id:
             button_text = "Yes, Purge outbox item"
             message = "Outbox item purged successfully"
             confirm_message = "Are you sure you want to purge the outbox item? This action cannot be undone."
@@ -156,14 +166,18 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
             with col1:
                 if st.button(button_text):
-                    purge_outbox_item = call_action_walker_exec(
-                        agent_id,
-                        module_root,
-                        "purge_outbox",
-                        {"item_id": item_id},
+                    result = call_api(
+                        endpoint="action/walker/wppconnect_action/purge_outbox",
+                        json_data={"agent_id": agent_id, "job_id": job_id},
                     )
-                    st.session_state.purge_outbox_item = purge_outbox_item
-                    st.session_state.confirm_purge_collection = False
+                    if result and result.status_code == 200:
+                        purge_outbox_item = get_reports_payload(result)
+
+                        st.session_state.purge_outbox_item = purge_outbox_item
+                        st.session_state.confirm_purge_collection = False
+                    else:
+                        st.session_state.confirm_purge_collection = False
+                        st.session_state.purge_outbox_item = None
 
             with col2:
                 if st.button("no, cancel"):
@@ -189,20 +203,35 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     # Unique keys in session state for button control and data
     session_payload_key = "wppconnect_payload"
 
-    def get_wppconnect_status() -> None:
+    def get_wppconnect_status(auto_register: bool = False) -> None:
         """Call and store the latest status in session state."""
-        result = call_action_walker_exec(agent_id, module_root, "register_session", {})
-        st.session_state[session_payload_key] = result or {}
+        st.session_state[session_payload_key] = {}
+
+        result = call_api(
+            endpoint="action/walker/wppconnect_action/register_session",
+            json_data={"agent_id": agent_id, "auto_register": auto_register},
+        )
+        if result and result.status_code == 200:
+            result = get_reports_payload(result)
+            st.session_state[session_payload_key] = result
 
     def logout_wppconnect() -> None:
-        call_action_walker_exec(agent_id, module_root, "logout_session", {})
-        st.session_state.pop(session_payload_key, None)
-        # Optionally store a notification or feedback flag
+        """Logout session state."""
+        result = call_api(
+            endpoint="action/walker/wppconnect_action/logout_session",
+            json_data={"agent_id": agent_id},
+        )
+        if result and result.status_code == 200:
+            st.session_state.pop(session_payload_key, None)
 
     def close_wppconnect() -> None:
-        call_action_walker_exec(agent_id, module_root, "close_session", {})
-        st.session_state.pop(session_payload_key, None)
-        # Optionally store a notification or feedback flag
+        """Close session state."""
+        result = call_api(
+            endpoint="action/walker/wppconnect_action/close_session",
+            json_data={"agent_id": agent_id},
+        )
+        if result and result.status_code == 200:
+            st.session_state.pop(session_payload_key, None)
 
     # initialize the session state for wppconnect status
     if session_payload_key not in st.session_state:
@@ -213,14 +242,14 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
     with st.expander("WPPConnect Session Registration", expanded=True):
 
-        if result == {} or result.get("status") == "ERROR":
+        if result == {}:
             st.error(
                 f"{result.get("message", "Session registration error.")} Check your WPPConnect Configuration and try again.",
                 icon="❌",
             )
             if st.button("Refresh", key="refresh_registration_btn"):
                 with st.spinner("Refreshing session..."):
-                    get_wppconnect_status()
+                    get_wppconnect_status(auto_register=True)
                     st.rerun()
             st.stop()
 
@@ -256,7 +285,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 unsafe_allow_html=True,
             )
 
-            col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+            col1, col2, col3 = st.columns([2, 2, 10])
             with col1:
                 if st.button(
                     "Logout",
@@ -275,7 +304,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        elif result.get("status") == "INITIALIZING":
+        elif (
+            result.get("status") == "INITIALIZING"
+            or result.get("status") == "AWAITING_QR_SCAN"
+            and not result.get("qrcode")
+        ):
             # Status is INITIALIZING and qrcode is not ready
             st.warning(
                 "Session is initializing. Please wait a moment. Click 'Refresh' to update status. If too much time elapses, click 'Close Session' to start again",
@@ -283,11 +316,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             )
             st.markdown("<br>", unsafe_allow_html=True)
 
-            col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+            col1, col2, col3 = st.columns([2, 2, 10])
             with col1:
                 if st.button("Refresh", key="init_refresh_session_btn"):
                     with st.spinner("Refreshing session..."):
-                        get_wppconnect_status()
+                        get_wppconnect_status(auto_register=True)
                         st.rerun()
 
             with col2:
@@ -304,7 +337,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     st.rerun()
 
         else:
+
             qrcode = result.get("qrcode", "")
+
             if not qrcode:
                 # Status is not CONNECTED and qrcode is missing or empty
                 st.info(
@@ -313,20 +348,17 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 )
                 st.markdown("<br>", unsafe_allow_html=True)
 
-                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                col1, col2, col3 = st.columns([2, 2, 10])
                 with col1:
                     if st.button("Start", key="not_qr_start_session_btn"):
                         with st.spinner("Starting session..."):
-                            get_wppconnect_status()
+                            get_wppconnect_status(auto_register=True)
                             st.rerun()
 
             else:
-                # qrcode exists: show QR image and refresh
+
                 st.info(
-                    result.get(
-                        "message",
-                        "Scan the QR code to connect your WhatsApp account.",
-                    ),
+                    "Scan the QR code to connect your WhatsApp account.",
                     icon="ℹ️",
                 )
                 try:
@@ -345,11 +377,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 except Exception as ex:
                     st.error(f"There was an error rendering the QR code., {str(ex)}")
 
-                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 3, 3, 2, 2])
+                col1, col2, col3 = st.columns([2, 2, 10])
                 with col1:
                     if st.button("Refresh", key="refresh_qr_btn"):
                         with st.spinner("Refreshing QR code..."):
-                            get_wppconnect_status()
+                            get_wppconnect_status(auto_register=True)
                             st.rerun()
 
                 with col2:
@@ -376,16 +408,21 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         if "status" not in st.session_state:
             st.session_state.status = []
 
-        # Fetch documents with pagination parameters
         args = {
+            "agent_id": agent_id,
             "page": st.session_state.current_page,
             "limit": st.session_state.per_page,
             "filtered_job_id": st.session_state.job_id,
             "filtered_status": st.session_state.status,
         }
 
-        data = call_action_walker_exec(agent_id, module_root, "list_outbox_items", args)
-        if data:
+        # Fetch documents with pagination parameters
+        result = call_api(
+            endpoint="action/walker/wppconnect_action/list_outbox_items", json_data=args
+        )
+
+        if result.status_code == 200:
+            data = get_reports_payload(result)
 
             # Use the total_items from the API response, not the length of current items
             total_items = data.get("total_items", 0)
@@ -396,7 +433,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             # Combine date and time columns if they exist
             if "date" in df.columns and "time" in df.columns:
                 df["datetime"] = df["date"].astype(str) + " " + df["time"].astype(str)
-                # Convert to datetime if neededpass
+                # Convert to datetime if needed pass
                 with suppress(Exception):
                     df["datetime"] = pd.to_datetime(df["datetime"])
 
@@ -459,7 +496,6 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
                 # Apply filters
                 df_filtered = df.copy()
-                # st.write(df_filtered)
 
                 # Display the data with adjusted column widths
                 st.dataframe(
@@ -488,7 +524,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 )
 
                 # Pagination controls at the bottom
-                col1, col2, col3 = st.columns([1, 4, 1])
+                col1, col2, col3 = st.columns([2, 4, 2])
 
                 with col1:
                     if st.session_state.current_page > 1:

@@ -1,7 +1,8 @@
-import:jac from jivas.agent.core.graph_node { GraphNode }
-import:jac from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
+import from jivas.agent.core.graph_node { GraphNode }
+import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
 
-node OutboxItem :GraphNode: {
+node OutboxItem(GraphNode) {
+    has collection_id:str = "";
     has item_id:str = "";
     has added_at:str = "";
     has message:dict = {};
