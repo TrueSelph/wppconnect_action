@@ -6,12 +6,14 @@ import traceback;
 import base64;
 import random;
 import from datetime { datetime, timezone }
+import dateutil.parser;
 import from typing { Union }
 import from logging { Logger }
 import from .modules.wppconnect_api { WPPConnectAPI }
 import from actions.jivas.wppconnect_action.outbox { Outbox }
 import from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
 import from actions.jivas.wppconnect_action.job { Job }
+import from actions.jivas.wppconnect_action.whatsapp_media { WhatsappMedia }
 import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
 
 import from jivas.agent.modules.text.chunking { chunk_long_message }
@@ -26,6 +28,7 @@ import from jivas.agent.core.graph_node { GraphNode }
 import from .wppconnect_interact { wppconnect_interact }
 import from jac_cloud.core.archetype {BaseCollection, NodeAnchor}
 import from jivas.agent.modules.data.node_pager { NodePager }
+import from jivas.agent.modules.data.commit { commit }
 
 
 node WPPConnectAction(Action) {
@@ -677,7 +680,7 @@ node WPPConnectAction(Action) {
         };
     }
 
-    def add_outbox_item(job_id: str, collection_id: str, session_id: str, status: OutboxItemStatus = OutboxItemStatus.PENDING, message: InteractionMessage) {
+    def add_outbox_item(job_id: str, session_id: str, status: OutboxItemStatus = OutboxItemStatus.PENDING, message: InteractionMessage) {
         # Adds validated item to specified job with type checking
 
         if not all([
@@ -690,7 +693,7 @@ node WPPConnectAction(Action) {
         }
 
         item_id = str(uuid.uuid4());
-        self.add_outbox_item_collection(status=status, collection_id=collection_id, job_id= job_id, item_id=item_id, session_id=session_id, message=message);
+        self.add_outbox_item_collection(status=status, job_id= job_id, item_id=item_id, session_id=session_id, message=message);
     }
 
     def maybe_trigger_callback(job_id:str, job:dict) {
@@ -757,9 +760,9 @@ node WPPConnectAction(Action) {
 
 
     # collection
-    def add_outbox_item_collection(status:OutboxItemStatus, collection_id: str, job_id: str, item_id: str, session_id: str, message: InteractionMessage) -> Job {
+    def add_outbox_item_collection(status:OutboxItemStatus, job_id: str, item_id: str, session_id: str, message: InteractionMessage) -> Job {
         collection = self.get_collection();
-        outbox_item = (collection spawn _add_job_collection(status=status, job_id=job_id, item_id=item_id, session_id=session_id, message=message, collection_id=collection_id)).outbox_item;
+        outbox_item = (collection spawn _add_job_collection(status=status, job_id=job_id, item_id=item_id, session_id=session_id, message=message, collection_id=collection.id)).outbox_item;
         if outbox_item {
             self.increment_job_count();
         }
@@ -796,13 +799,13 @@ node WPPConnectAction(Action) {
             # import outbox
             for (job_id, job_data) in outbox.items() {
                 for (item_id, job) in job_data['pending'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.PENDING, collection_id=collection.id, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                    self.add_outbox_item_collection(status=OutboxItemStatus.PENDING, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
                 for (item_id, job) in job_data['processed'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.PROCESSED, collection_id=collection.id, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                    self.add_outbox_item_collection(status=OutboxItemStatus.PROCESSED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
                 for (item_id, job) in job_data['failed'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.FAILED, collection_id=collection.id, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+                    self.add_outbox_item_collection(status=OutboxItemStatus.FAILED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
                 }
             }
 
@@ -873,26 +876,87 @@ node WPPConnectAction(Action) {
     }
 
 
-    def get_wppconnect_media(session_id:str) -> list {
+    # handle media 
+    def save_whatsapp_media(file_url:str, data:dict, frame_node:Frame) {
         collection = self.get_collection();
-        media_list = self.api().list_files_in_folder(f".files/{self.get_agent().id}/{self.label}/media/{session_id}");
+        collection spawn _save_media(session_id=frame_node.session_id, file_url=file_url, data=data);
 
-        media_urls = [];
-        for output_filename in media_list {
-            output_file_path = f"media/{session_id}/{output_filename}";
-            file_url = self.get_file_url(output_file_path);
-            media_urls.append(file_url);
+    }
+
+    def get_whatsapp_media(within_seconds:int=0, frame_node:Frame) -> list {
+        collection = self.get_collection();
+        new_whatsapp_media = (collection spawn _get_media(session_id=frame_node.session_id, within_seconds=within_seconds)).media;
+
+        return new_whatsapp_media;
+    }
+
+    def delete_whatsapp_media(frame_node:Frame) {
+        collection = self.get_collection();
+        collection spawn _delete_media(session_id=frame_node.session_id);
+    }
+}
+
+
+walker _save_media {
+    has session_id:str = "";
+    has file_url:str = "";
+    has data:dict = {};
+
+    obj __specs__ {
+        static has private:bool = True;
+    }
+
+    can on_collection with Collection entry {
+        current_time = str(datetime.now(timezone.utc));
+        whatsapp_media = WhatsappMedia(file_url=self.file_url, data=self.data, session_id=self.session_id, created_on=current_time);
+        here ++> whatsapp_media;
+        commit(whatsapp_media);
+    }
+}
+
+walker _get_media {
+    has session_id:str = "";
+    has media:list = [];
+    has within_seconds:int = 0;
+
+    obj __specs__ {
+        static has private:bool = True;
+    }
+
+    can on_collection with Collection entry {
+        visit [-->](`?WhatsappMedia)(?session_id == self.session_id);
+    }
+
+    can on_whatsapp_media with WhatsappMedia entry {
+        if self.within_seconds > 0 {
+            current_time = datetime.now(timezone.utc);
+
+            created_on = dateutil.parser.isoparse(here.created_on);
+
+            time_diff = (current_time - created_on).total_seconds();
+
+            if  time_diff <= self.within_seconds {
+                self.media.append(here.export());
+            }
+        } else {
+            self.media.append(here.export());
         }
-        return media_urls;
+    }
+}
+
+walker _delete_media {
+    has session_id:str = "";
+
+    obj __specs__ {
+        static has private:bool = True;
     }
 
-    def get_wppconnect_recent_files(session_id:str, seconds:int=0) -> list {
-        return self.api().list_files_in_folder(directory=f".files/{self.get_agent().id}/{self.label}/media/{session_id}", within_seconds=seconds);
+    can on_collection with Collection entry {
+        visit [-->](`?WhatsappMedia)(?session_id == self.session_id);
     }
 
-    def delete_wppconnect_media(session_id:str) {
-        media_path = f".files/{self.get_agent().id}/{self.label}/media/{session_id}";
-        shutil.rmtree(media_path, ignore_errors=True);
+    can on_whatsapp_media with WhatsappMedia entry {
+        Jac.destroy(here);
     }
 }
 

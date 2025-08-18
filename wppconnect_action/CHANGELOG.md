@@ -127,3 +127,6 @@ poll_im.data = {
 
 ## 0.1.4
 - Updated for compat with Jivas 2.1.14
+
+## 0.1.5
+- Fix collection_id bug
