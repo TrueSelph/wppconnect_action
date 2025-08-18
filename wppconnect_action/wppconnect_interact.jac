@@ -343,7 +343,7 @@ walker wppconnect_interact(action_webhook_walker) {
                 return;
             }
 
-            # save to frame 
+            # save to frame
             action_node.save_whatsapp_media(file_url=file_url, data=data, frame_node=frame_node);
 
             data['media'] = file_url;

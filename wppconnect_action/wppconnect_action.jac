@@ -876,7 +876,7 @@ node WPPConnectAction(Action) {
     }
 
 
-    # handle media 
+    # handle media
     def save_whatsapp_media(file_url:str, data:dict, frame_node:Frame) {
         collection = self.get_collection();
         collection spawn _save_media(session_id=frame_node.session_id, file_url=file_url, data=data);
