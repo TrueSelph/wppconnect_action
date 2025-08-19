@@ -403,8 +403,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             st.session_state.current_page = 1
         if "per_page" not in st.session_state:
             st.session_state.per_page = 10
-        if "job_id" not in st.session_state:
-            st.session_state.job_id = []
+        if "session_id" not in st.session_state:
+            st.session_state.session_id = []
         if "status" not in st.session_state:
             st.session_state.status = []
 
@@ -412,7 +412,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             "agent_id": agent_id,
             "page": st.session_state.current_page,
             "limit": st.session_state.per_page,
-            "filtered_job_id": st.session_state.job_id,
+            "filtered_sessions": st.session_state.session_id,
             "filtered_status": st.session_state.status,
         }
 
@@ -427,143 +427,158 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             # Use the total_items from the API response, not the length of current items
             total_items = data.get("total_items", 0)
             total_pages = data.get("total_pages", 1)
+            if "items" in data and data["items"]:
 
-            df = prepare_data(data["items"])
+                df = prepare_data(data["items"])
 
-            # Combine date and time columns if they exist
-            if "date" in df.columns and "time" in df.columns:
-                df["datetime"] = df["date"].astype(str) + " " + df["time"].astype(str)
-                # Convert to datetime if needed pass
-                with suppress(Exception):
-                    df["datetime"] = pd.to_datetime(df["datetime"])
-
-            if not df.empty:
-                # Create columns for filters
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    prev_status_filter = st.session_state.status
-                    # Status filter - empty by default shows all
-                    status_filter = st.multiselect(
-                        "Filter by status",
-                        options=sorted(["FAILED", "PENDING", "PROCESSED"]),
-                        default=(
-                            st.session_state.status if st.session_state.status else []
-                        ),
+                # Combine date and time columns if they exist
+                if "date" in df.columns and "time" in df.columns:
+                    df["datetime"] = (
+                        df["date"].astype(str) + " " + df["time"].astype(str)
                     )
-                    st.session_state.status = status_filter
+                    # Convert to datetime if needed pass
+                    with suppress(Exception):
+                        df["datetime"] = pd.to_datetime(df["datetime"])
 
-                    # If status changed, trigger a rerun
-                    if status_filter != prev_status_filter:
-                        st.rerun()
+                if not df.empty:
+                    # Create columns for filters
 
-                with col2:
-                    prev_batch_filter = st.session_state.job_id
-                    # Batch ID filter - empty by default shows all
-                    batch_filter = st.multiselect(
-                        "Filter by Job ID",
-                        options=sorted(data["jobs"]),
-                        default=(
-                            st.session_state.job_id if st.session_state.job_id else []
-                        ),
-                    )
-                    st.session_state.job_id = batch_filter
-                    # If job_id changed, trigger a rerun
-                    if batch_filter != prev_batch_filter:
-                        st.rerun()
+                    col1, col2, col3 = st.columns(3)
 
-                with col3:
-                    # Store previous per_page value
-                    prev_per_page = st.session_state.per_page
+                    with col1:
+                        prev_status_filter = st.session_state.status
+                        # Status filter - empty by default shows all
+                        status_filter = st.multiselect(
+                            "Filter by status",
+                            options=sorted(["FAILED", "PENDING", "PROCESSED"]),
+                            default=(
+                                st.session_state.status
+                                if st.session_state.status
+                                else []
+                            ),
+                        )
+                        st.session_state.status = status_filter
 
-                    # Per-page selection dropdown
-                    per_page = st.selectbox(
-                        "Items per page",
-                        options=[5, 10, 20, 50, 100, 200],
-                        index=[5, 10, 20, 50, 100, 200].index(
-                            st.session_state.per_page
-                        ),
-                        key="per_page_selector",
-                        on_change=lambda: setattr(st.session_state, "current_page", 1),
-                    )
-                    # Update per_page in session state
-                    st.session_state.per_page = per_page
-
-                    # If per_page changed, trigger a rerun
-                    if per_page != prev_per_page:
-                        st.rerun()
-
-                # Apply filters
-                df_filtered = df.copy()
-
-                # Display the data with adjusted column widths
-                st.dataframe(
-                    df_filtered[
-                        [
-                            "id",
-                            "session_id",
-                            "content",
-                            "message_type",
-                            "status",
-                            "datetime",
-                        ]
-                    ],
-                    column_config={
-                        "id": "Message ID",
-                        "session_id": "Session ID",
-                        "content": st.column_config.TextColumn(
-                            "Content", width="large"
-                        ),
-                        "message_type": "Type",
-                        "status": st.column_config.TextColumn("Status", width="small"),
-                        "datetime": "Date & Time",
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                )
-
-                # Pagination controls at the bottom
-                col1, col2, col3 = st.columns([2, 4, 2])
-
-                with col1:
-                    if st.session_state.current_page > 1:
-                        if st.button("⬅️ Previous Page"):
-                            st.session_state.current_page -= 1
+                        # If status changed, trigger a rerun
+                        if status_filter != prev_status_filter:
                             st.rerun()
-                    else:
-                        st.button("⬅️ Previous Page", disabled=True)
 
-                with col2:
-                    # Centered pagination info
-                    st.markdown(
-                        f"<div style='text-align: center;'>Showing {len(df_filtered)} of {total_items} messages (Page {st.session_state.current_page} of {total_pages})</div>",
-                        unsafe_allow_html=True,
-                    )
-
-                with col3:
-                    if st.session_state.current_page < total_pages:
-                        if st.button("Next Page ➡️"):
-                            st.session_state.current_page += 1
+                    with col2:
+                        prev_batch_filter = st.session_state.session_id
+                        # Batch ID filter - empty by default shows all
+                        batch_filter = st.multiselect(
+                            "Filter by Session ID",
+                            options=sorted(data["sessions"]),
+                            default=(
+                                st.session_state.session_id
+                                if st.session_state.session_id
+                                else []
+                            ),
+                        )
+                        st.session_state.session_id = batch_filter
+                        # If session_id changed, trigger a rerun
+                        if batch_filter != prev_batch_filter:
                             st.rerun()
-                    else:
-                        st.button("Next Page ➡️", disabled=True)
 
-                # Message statistics
-                st.write("---")
-                st.subheader("Message Statistics")
+                    with col3:
+                        # Store previous per_page value
+                        prev_per_page = st.session_state.per_page
 
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Messages", total_items)
-                with col2:
-                    st.metric(
-                        "Processed Messages", len(df[df["status"] == "PROCESSED"])
+                        # Per-page selection dropdown
+                        per_page = st.selectbox(
+                            "Items per page",
+                            options=[5, 10, 20, 50, 100, 200],
+                            index=[5, 10, 20, 50, 100, 200].index(
+                                st.session_state.per_page
+                            ),
+                            key="per_page_selector",
+                            on_change=lambda: setattr(
+                                st.session_state, "current_page", 1
+                            ),
+                        )
+                        # Update per_page in session state
+                        st.session_state.per_page = per_page
+
+                        # If per_page changed, trigger a rerun
+                        if per_page != prev_per_page:
+                            st.rerun()
+
+                    # Apply filters
+                    df_filtered = df.copy()
+
+                    # Display the data with adjusted column widths
+                    st.dataframe(
+                        df_filtered[
+                            [
+                                "id",
+                                "session_id",
+                                "content",
+                                "message_type",
+                                "status",
+                                "datetime",
+                            ]
+                        ],
+                        column_config={
+                            "id": "Message ID",
+                            "session_id": "Session ID",
+                            "content": st.column_config.TextColumn(
+                                "Content", width="large"
+                            ),
+                            "message_type": "Type",
+                            "status": st.column_config.TextColumn(
+                                "Status", width="small"
+                            ),
+                            "datetime": "Date & Time",
+                        },
+                        hide_index=True,
+                        use_container_width=True,
                     )
-                with col3:
-                    st.metric("Pending Messages", len(df[df["status"] == "PENDING"]))
-                with col4:
-                    st.metric("Failed Messages", len(df[df["status"] == "FAILED"]))
+
+                    # Pagination controls at the bottom
+                    col1, col2, col3 = st.columns([2, 4, 2])
+
+                    with col1:
+                        if st.session_state.current_page > 1:
+                            if st.button("⬅️ Previous Page"):
+                                st.session_state.current_page -= 1
+                                st.rerun()
+                        else:
+                            st.button("⬅️ Previous Page", disabled=True)
+
+                    with col2:
+                        # Centered pagination info
+                        st.markdown(
+                            f"<div style='text-align: center;'>Showing {len(df_filtered)} of {total_items} messages (Page {st.session_state.current_page} of {total_pages})</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    with col3:
+                        if st.session_state.current_page < total_pages:
+                            if st.button("Next Page ➡️"):
+                                st.session_state.current_page += 1
+                                st.rerun()
+                        else:
+                            st.button("Next Page ➡️", disabled=True)
+
+                    # Message statistics
+                    st.write("---")
+                    st.subheader("Message Statistics")
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Messages", total_items)
+                    with col2:
+                        st.metric(
+                            "Processed Messages", len(df[df["status"] == "PROCESSED"])
+                        )
+                    with col3:
+                        st.metric(
+                            "Pending Messages", len(df[df["status"] == "PENDING"])
+                        )
+                    with col4:
+                        st.metric("Failed Messages", len(df[df["status"] == "FAILED"]))
+                else:
+                    st.warning("No outbox messages found")
             else:
                 st.warning("No outbox messages found")
         else:
@@ -577,7 +592,7 @@ def prepare_data(data: dict) -> pd.DataFrame:
 
     Args:
         data (list): A list of dictionaries, each representing a message with fields
-                     such as 'job_id', 'item_id', 'status', 'session_id', 'message',
+                     such as 'session_id', 'item_id', 'status', 'session_id', 'message',
                      and 'added_at'.
 
     Returns:
@@ -589,7 +604,6 @@ def prepare_data(data: dict) -> pd.DataFrame:
 
     for message in data:
         item = {
-            "job_id": message["job_id"],
             "id": message["item_id"],
             "status": message["status"],
             "session_id": message["session_id"],

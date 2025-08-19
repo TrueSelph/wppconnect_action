@@ -366,7 +366,14 @@ node WPPConnectAction(Action) {
             interaction_message.load(message);
         } elif message_type == MessageType.MULTI.value {
             interaction_message = MultiInteractionMessage();
-            interaction_message.load(message);
+            for message_item in message.get("content") {
+                message_item_type = message_item.get("message_type");
+                if message_item_type == MessageType.TEXT.value {
+                    interaction_message.add_interaction_message(TextInteractionMessage(content=message_item.get("content")));
+                } elif message_item_type == MessageType.MEDIA.value {
+                    interaction_message.add_interaction_message(MediaInteractionMessage(mime=message_item.get("mime"), content=message_item.get("content"), data=message_item.get("data")));
+                }
+            }
         } else {
             return None;
         }
@@ -854,24 +861,56 @@ node WPPConnectAction(Action) {
         return job_count;
     }
 
-    def list_outbox_items(page:int, limit:int, filtered_status:list = [], filtered_job_id:list = []) -> dict {
+    def list_outbox_items(page:int, limit:int, filtered_status:list = [], filtered_sessions:list = []) -> list[dict] {
         # Lists all document entries in the manifest with pagination.
 
         collection = self.get_collection();
-        result = collection spawn _list_outbox_items(page=page, limit=limit, total_items=self.get_job_count(), filtered_status=filtered_status, filtered_job_id=filtered_job_id);
-        if not result {
-            self.logger.error("No jobs found in the manifest.");
+        # Initialize pager
+        pager = NodePager(NodeAnchor.Collection, page_size=limit, current_page=page);
+
+        inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}];
+        if (filtered_status and filtered_sessions) {
+            inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id, "archetype.session_id": {"$in": filtered_sessions}, "archetype.status": {"$in": filtered_status}}];
+        }elif(filtered_sessions) {
+            inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id, "archetype.session_id": {"$in": filtered_sessions}}];
+        }elif(filtered_status) {
+            inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id, "archetype.status": {"$in": filtered_status}}];
+        }
+
+        items = pager.get_page({
+            "$or": [
+                {"$and": inbox_item_filter}
+            ]
+        });
+
+        if not items {
             return {};
         }
+
+        outbox_items = [];
+        sessions = [];
+        for item in items {
+            if item.session_id not in sessions {
+                sessions.append(item.session_id);
+            }
+            outbox_items.append(item.export());
+        }
+
+
+        # call export on each and convert it to a dict
+        items = [item.export() for item in items];
+        # get all info as a dict
+        pagination_info = pager.to_dict();
+
         return {
-            "page": result.page,
-            "limit": result.limit,
-            "total_items": result.total_items,
-            "total_pages": result.total_pages,
-            "has_previous": result.has_previous,
-            "has_next": result.has_next,
-            "items": result.items,
-            "jobs": result.jobs
+            "page": page,
+            "limit": limit,
+            "total_items": pagination_info.get("total_items", 0),
+            "total_pages": pagination_info.get("total_pages", 1),
+            "has_previous": pagination_info.get("has_previous", False),
+            "has_next": pagination_info.get("has_next", False),
+            "items": outbox_items,
+            "sessions": sessions
         };
     }
 
@@ -1147,94 +1186,6 @@ walker _get_jobs {
             "total": here.total
         };
 
-    }
-}
-
-
-walker _list_outbox_items {
-    # Spawns on action collection and returns a paginated, flattened list of doc entries with total count and page control
-
-    has page:int = 1;
-    has limit:int = 50;
-    has offset:int = 0;
-    has total_items:int = 0;
-    has total_pages:int = 1;
-    has has_previous:bool = False;
-    has has_next:bool = False;
-    has current_index:int = 0;
-    has items:list = [];
-    has filtered_status:str = [];
-    has filtered_job_id:str = [];
-    has jobs:list = [];
-
-    # set up logger
-    static has logger:Logger = logging.getLogger(__name__);
-
-    obj __specs__ {
-        static has private: bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?Outbox);
-    }
-
-    can on_outbox with Outbox entry {
-        # First, count total doc entries
-        job_entries = [-->](`?Job);
-
-        # Calculate offset based on page and limit
-        if self.limit > 0 {
-            self.offset = (self.page - 1) * self.limit;
-            self.total_pages = (self.total_items // self.limit) + (1 if self.total_items % self.limit > 0 else 0);
-            self.has_previous = self.page > 1;
-            self.has_next = self.page < self.total_pages;
-        } else {
-            self.offset = 0;
-            self.total_pages = 1;
-            self.has_previous = False;
-            self.has_next = False;
-        }
-
-        visit [-->](`?Job);
-    }
-
-    can on_job with Job entry {
-        self.jobs.append(here.job_id);
-        if self.filtered_job_id {
-            if(here.job_id in self.filtered_job_id) {
-                visit [-->](`?OutboxItem);
-            }
-        } else {
-            visit [-->](`?OutboxItem);
-        }
-    }
-
-    can on_outbox_item with OutboxItem entry {
-        if self.filtered_status {
-            if here.status.name in self.filtered_status {
-                if self.current_index >= self.offset and (self.limit == 0 or len(self.items) < self.limit) {
-                    outbox_item = here.export();
-                    job_id = [<--](`?Job)[0].job_id;
-                    outbox_item['job_id'] = job_id;
-                    self.items.append(outbox_item);
-                }
-                self.current_index += 1;
-                if self.limit != 0 and len(self.items) >= self.limit {
-                    disengage;
-                }
-            }
-        }else {
-            if self.current_index >= self.offset and (self.limit == 0 or len(self.items) < self.limit) {
-                outbox_item = here.export();
-                job_id = [<--](`?Job)[0].job_id;
-                outbox_item['job_id'] = job_id;
-                self.items.append(outbox_item);
-            }
-            self.current_index += 1;
-            if self.limit != 0 and len(self.items) >= self.limit {
-                disengage;
-            }
-        }
     }
 }
 
