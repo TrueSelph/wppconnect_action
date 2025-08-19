@@ -307,18 +307,20 @@ walker wppconnect_interact(action_webhook_walker) {
         # add document resource to data node in interaction
         if(self.is_directed_message(action_node, data)) {
             # default utterance
+            # at this point we validated that it warrants a response, let's issue the typing
+            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
+
             interact_utterance = f'sent {data['message_type']} file in the chat';
             existing_files_url = [];
+            existing_whatsapp_media = frame_node.data_get('whatsapp_media');
 
             # check for existing media
-            existing_media_url = action_node.get_wppconnect_recent_files(session_id=frame_node.session_id, seconds=action_node.recent_files_time_window);
+            existing_media_url = action_node.get_whatsapp_media(within_seconds=action_node.recent_files_time_window, frame_node=frame_node);
             if existing_media_url {
                 interact_utterance = "";
             }
 
 
-            # at this point we validated that it warrants a response, let's issue the typing
-            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
 
             # decode base64 encoded data into bytes
             file_data = base64.b64decode(data['media']);
@@ -340,6 +342,9 @@ walker wppconnect_interact(action_webhook_walker) {
                 self.logger.error(f"Unable to save file {output_filename} to the file system.");
                 return;
             }
+
+            # save to frame
+            action_node.save_whatsapp_media(file_url=file_url, data=data, frame_node=frame_node);
 
             data['media'] = file_url;
 
