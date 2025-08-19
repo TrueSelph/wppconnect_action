@@ -104,13 +104,13 @@ poll_im.data = {
 - Updated documentation to include the details on how to send polls.
 
 ## 0.0.15
-- Update action to store outbox in collection.
+- Updated action to store outbox in collection.
 
 ## 0.0.16
-- add missing status to add_outbox_job
+- added missing status to add_outbox_job
 
 ## 0.0.17
-- update job id
+- updated job id
 - add missing is_group to send media message
 
 ## 0.1.0
@@ -123,10 +123,14 @@ poll_im.data = {
 - Pass parent message using event
 
 ## 0.1.3
-- Add collection_id to outbox
+- Added collection_id to outbox
 
 ## 0.1.4
 - Updated for compat with Jivas 2.1.14
 
 ## 0.1.5
-- Fix collection_id bug
+- Fixed collection_id bug
+
+## 0.1.6
+- Fixed MultiInteractionMessage bug
+- Updated NodePager

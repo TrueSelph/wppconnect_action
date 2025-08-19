@@ -14,7 +14,7 @@ walker list_outbox_items(agent_graph_walker) {
     has limit:int = 10;
     has all:bool = False;  # new flag to indicate whether to return all documents
     has filtered_status:list = [];
-    has filtered_job_id:list = [];
+    has filtered_sessions:list = [];
     has response:dict = {};
     has reporting:bool = True;
 
@@ -37,9 +37,9 @@ walker list_outbox_items(agent_graph_walker) {
 
     can on_action with Action entry {
         if self.all {
-            self.response = here.list_outbox_items(page=self.page, limit=0, filtered_status=self.filtered_status, filtered_job_id=self.filtered_job_id);  # fetch all documents
+            self.response = here.list_outbox_items(page=self.page, limit=0, filtered_status=self.filtered_status, filtered_sessions=self.filtered_sessions);  # fetch all documents
         } else {
-            self.response = here.list_outbox_items(page=self.page, limit=self.limit, filtered_status=self.filtered_status, filtered_job_id=self.filtered_job_id);  # fetch paged documents
+            self.response = here.list_outbox_items(page=self.page, limit=self.limit, filtered_status=self.filtered_status, filtered_sessions=self.filtered_sessions);  # fetch paged documents
         }
 
         if self.reporting {
