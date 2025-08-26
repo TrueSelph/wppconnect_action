@@ -933,6 +933,21 @@ node WPPConnectAction(Action) {
         collection = self.get_collection();
         collection spawn _delete_media(session_id=frame_node.session_id);
     }
+
+    def export_collection() -> dict {
+        result = self.get_jobs();
+        return {"outbox": result};
+    }
+
+    def import_collection(collection_info:dict, purge_collection:bool=True) -> bool {
+
+        if collection_info {
+            outbox = collection_info.get("outbox");
+            self.import_outbox(outbox=outbox, purge_collection = purge_collection);
+            return True;
+        }
+        return False;
+    }
 }
 
 

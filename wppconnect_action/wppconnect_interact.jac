@@ -379,7 +379,7 @@ walker wppconnect_interact(action_webhook_walker) {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = {"whatsapp_media": data}
+                data = {"whatsapp_poll": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);

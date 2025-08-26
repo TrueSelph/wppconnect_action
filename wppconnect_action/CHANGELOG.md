@@ -134,3 +134,6 @@ poll_im.data = {
 ## 0.1.6
 - Fixed MultiInteractionMessage bug
 - Updated NodePager
+
+## 0.1.7
+- Added import and export collections
