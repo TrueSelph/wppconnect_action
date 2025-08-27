@@ -939,11 +939,11 @@ node WPPConnectAction(Action) {
         return {"outbox": result};
     }
 
-    def import_collection(collection_info:dict, purge_collection:bool=True) -> bool {
+    def import_collection(data:dict, purge:bool=True) -> bool {
 
-        if collection_info {
-            outbox = collection_info.get("outbox");
-            self.import_outbox(outbox=outbox, purge_collection = purge_collection);
+        if data {
+            outbox = data.get("outbox");
+            self.import_outbox(outbox=outbox, purge_collection = purge);
             return True;
         }
         return False;
