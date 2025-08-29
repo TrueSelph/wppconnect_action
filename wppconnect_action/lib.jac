@@ -13,5 +13,6 @@ import from actions.jivas.wppconnect_action {
     import_outbox,
     list_outbox_items,
     purge_outbox,
-    whatsapp_media
+    whatsapp_media,
+    resend_failed_outbox
 }
