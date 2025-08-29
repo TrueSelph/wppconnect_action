@@ -150,10 +150,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 if result.get("sessions"):
                     st.write("Failed sessions:")
                     st.write(result.get("sessions"))
-                
+
             else:
                 st.success("Resend outbox failed")
-
 
     with st.expander("Purge Outbox", False):
         job_id = st.text_input(
@@ -178,7 +177,6 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         if not item_id and not job_id and not status:
             purge_outbox = True
-            
 
         if job_id:
             button_text = "Yes, Purge outbox item"
@@ -206,7 +204,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 if st.button(button_text):
                     result = call_api(
                         endpoint="action/walker/wppconnect_action/purge_outbox",
-                        json_data={"purge": purge_outbox, "agent_id": agent_id, "job_id": job_id, "status": status, "item_id": item_id},
+                        json_data={
+                            "purge": purge_outbox,
+                            "agent_id": agent_id,
+                            "job_id": job_id,
+                            "status": status,
+                            "item_id": item_id,
+                        },
                     )
                     if result and result.status_code == 200:
                         purge_outbox_item = get_reports_payload(result)
@@ -610,11 +614,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     with col1:
                         st.metric("Total Messages", total_items)
                     with col2:
-                        st.metric(
-                            "Processed Messages", processed_items)
+                        st.metric("Processed Messages", processed_items)
                     with col3:
-                        st.metric(
-                            "Pending Messages", pending_items)
+                        st.metric("Pending Messages", pending_items)
                     with col4:
                         st.metric("Failed Messages", failed_items)
                 else:

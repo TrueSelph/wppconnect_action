@@ -1276,7 +1276,7 @@ walker _purge_outbox {
             if days_old >= self.threshold_days {
                 self.deleted_job.append(here);
                 self.job_id = here.job_id;
-            } 
+            }
         } elif here.job_id == self.job_id {
             self.deleted_job.append(here);
         } else {
@@ -1300,7 +1300,7 @@ walker _purge_outbox {
         } elif self.item_id {
             if here.item_id == self.item_id {
                 self.deleted.append(here);
-            } 
+            }
         } elif self.status {
             if here.status.value in self.status {
                 self.deleted.append(here);
