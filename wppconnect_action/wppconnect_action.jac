@@ -62,6 +62,8 @@ node WPPConnectAction(Action) {
     # poll settings
     has poll_manager_action:str = "PollManagerInteractAction"; # the label of the poll manager action to use for polls
     has recent_files_time_window:int = 30; # the time window in seconds to search for recent files
+    has last_purge_outbox:str = ""; # the last time the outbox was purged
+    has outbox_threshold_days:int = 7; # the number of days to keep messages in the outbox
 
 
     def on_enable() {
@@ -130,6 +132,12 @@ node WPPConnectAction(Action) {
         # Restart scheduler with new parameters if items remain
         if self.has_outbox_items() {
             self.restart_scheduler();
+        }
+        last_purge_outbox = datetime.now().strftime("%Y-%m-%d");
+
+        if self.last_purge_outbox != last_purge_outbox {
+            self.last_purge_outbox = last_purge_outbox;
+            self.purge_outbox(threshold_days=self.outbox_threshold_days);
         }
     }
 
@@ -516,6 +524,79 @@ node WPPConnectAction(Action) {
         return (processed_count, success_count, failure_count);
     }
 
+    def resend_failed_outbox(batch_size: int = 1) -> dict {
+        # Enhanced batch processing with success tracking
+
+        found_failed_outbox = False;
+        jobs = self.get_jobs();
+        if jobs and len(jobs) > 0 {
+            for (job_id, job) in jobs.items() {
+                if len(job['failed']) > 0 {
+                    found_failed_outbox = True;
+                }
+            }
+        }
+
+        if not found_failed_outbox {
+            return {"message": f"No failed outbox items found."};
+        }
+
+        processed_count = 0;
+        success_count = 0;
+        failure_count = 0;
+        failed_sessions = [];
+        jobs = list(self.get_jobs().items());
+
+        while processed_count < batch_size and len(jobs) > 0 {
+            (job_id, job) = jobs.pop(0);
+
+            # Process batch slice
+            processable = min(batch_size - processed_count, len(job['failed']));
+            items = list(job['failed'].items())[:processable];
+
+            for (item_id, item) in items {
+                try {
+                    interaction_message = self.prepare_interaction_message(
+                        message=item['message']
+                    );
+                    result = self.send_message(
+                        session_id=item['session_id'],
+                        message=interaction_message
+                    );
+
+                    if result.get('status') == 'success' {
+                        job['processed'][item_id] = item;
+                        success_count += 1;
+                        new_success_rate = job['success_rate'] + success_count;
+                        self.update_job_collection(status=OutboxItemStatus.PROCESSED, item_id=item_id, job_id=job_id, success_rate=new_success_rate);
+
+                        self.update_interaction_context(item, interaction_message);
+                    } else {
+                        failed_sessions.append(item['session_id']);
+                        job['failed'][item_id] = item;
+                        failure_count += 1;
+                        self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
+                    }
+
+                    del job['failed'][item_id];
+                    processed_count += 1;
+                } except Exception as e {
+                    failed_sessions.append(item['session_id']);
+                    self.logger.error(f"Outbox message processing failed: {str(e)}");
+                    self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
+                    job['failed'][item_id] = item;
+                    failure_count += 1;
+                    processed_count += 1;
+                }
+            }
+
+            # Update job state
+            self.maybe_trigger_callback(job_id, job);
+        }
+
+        return {"message": f"Processed: {processed_count}, Success: {success_count}, Failure: {failure_count}","sessions":failed_sessions};
+    }
+
     def update_interaction_context(item:dict, message:InteractionMessage) {
         # Shared context update logic
         agent_node = self.get_agent();
@@ -776,13 +857,6 @@ node WPPConnectAction(Action) {
         return outbox_item;
     }
 
-    def purge_outbox(job_id: str="") -> Job {
-        collection = self.get_collection();
-        jobs = (collection spawn _delete_job(job_id=job_id)).deleted;
-        total_jobs = self.get_job_count();
-        self.set_job_count(total_jobs - len(jobs));
-        return jobs;
-    }
 
     def get_jobs(job_id:str = "") -> dict {
         collection = self.get_collection();
@@ -794,13 +868,25 @@ node WPPConnectAction(Action) {
         return (collection spawn _update_job_collection(status=status, job_id=job_id, item_id=item_id, success_rate=success_rate));
     }
 
+    def purge_outbox(purge:bool = False, threshold_days:int = 0, status:list = [], item_id:str = "", job_id:str = "") -> bool {
+        collection = self.get_collection();
+        result = (collection spawn _purge_outbox(purge=purge, threshold_days=threshold_days, status=status, item_id=item_id, job_id=job_id));
+
+        deleted = result.deleted;
+        deleted_job = result.deleted_job;
+        deleted.extend(deleted_job);
+        total_jobs = self.get_job_count();
+        self.set_job_count(total_jobs - len(deleted_job));
+        return len(deleted) > 0;
+    }
+
     def import_outbox(outbox: dict, purge_collection: bool = False) -> bool {
         try {
             collection = self.get_collection();
 
             # purge jobs collection
             if(purge_collection){
-                self.purge_outbox();
+                self.purge_outbox(purge=True);
             }
 
             # import outbox
@@ -883,6 +969,18 @@ node WPPConnectAction(Action) {
             ]
         });
 
+        processed_items = NodeAnchor.Collection.count({
+            "$and": [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}, {"archetype.status": {"$in": ["PROCESSED"]}}]
+        });
+
+        failed_items = NodeAnchor.Collection.count({
+            "$and": [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}, {"archetype.status": {"$in": ["FAILED"]}}]
+        });
+
+        pending_items = NodeAnchor.Collection.count({
+            "$and": [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}, {"archetype.status": {"$in": ["PENDING"]}}]
+        });
+
         if not items {
             return {};
         }
@@ -905,12 +1003,15 @@ node WPPConnectAction(Action) {
         return {
             "page": page,
             "limit": limit,
-            "total_items": pagination_info.get("total_items", 0),
+            "total_items": processed_items + pending_items + failed_items,
             "total_pages": pagination_info.get("total_pages", 1),
             "has_previous": pagination_info.get("has_previous", False),
             "has_next": pagination_info.get("has_next", False),
             "items": outbox_items,
-            "sessions": sessions
+            "sessions": sessions,
+            "processed": processed_items,
+            "pending": pending_items,
+            "failed": failed_items
         };
     }
 
@@ -1135,6 +1236,88 @@ walker _update_job_collection {
 
     can on_outbox_item with OutboxItem entry {
         here.status = self.status;
+    }
+}
+
+walker _purge_outbox {
+    has purge:bool = False;
+    has threshold_days:int = 0;
+    has status:list = [];
+    has item_id:str = "";
+    has job_id:str = "";
+    has deleted:list = [];
+    has deleted_job:list = [];
+
+    obj __specs__ {
+        static has private:bool = True;
+    }
+
+    can on_collection with Collection entry {
+        visit [-->](`?Outbox);
+    }
+
+    can on_outbox with Outbox entry {
+        if self.purge {
+            self.deleted.append(here);
+        }
+
+        visit [-->](`?Job)(?job_id == self.job_id) else {
+            visit [-->](`?Job);
+        }
+    }
+
+    can on_job with Job entry {
+        if self.purge {
+            self.deleted_job.append(here);
+        } elif self.threshold_days > 0 {
+            created_dt = datetime.fromisoformat(here.created_at);
+            now = datetime.now();
+            days_old = (now - created_dt).days;
+            if days_old >= self.threshold_days {
+                self.deleted_job.append(here);
+                self.job_id = here.job_id;
+            } 
+        } elif here.job_id == self.job_id {
+            self.deleted_job.append(here);
+        } else {
+            children_edges = [-->](`?OutboxItem);
+            if(len(children_edges) <= 1) {
+                self.deleted_job.append(here);
+            }
+        }
+
+        visit [-->](`?OutboxItem)(?item_id == self.item_id) else {
+            visit [-->](`?OutboxItem);
+        }
+
+    }
+
+    can on_outbox_item with OutboxItem entry {
+        if self.purge {
+            self.deleted.append(here);
+        } elif self.job_id {
+            self.deleted.append(here);
+        } elif self.item_id {
+            if here.item_id == self.item_id {
+                self.deleted.append(here);
+            } 
+        } elif self.status {
+            if here.status.value in self.status {
+                self.deleted.append(here);
+            }
+        } else {
+            self.deleted.append(here);
+        }
+    }
+
+    can on_exit with exit {
+        for item in self.deleted {
+            Jac.destroy(item);
+        }
+
+        for item in self.deleted_job {
+            Jac.destroy(item);
+        }
     }
 }
 

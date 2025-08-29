@@ -35,7 +35,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             key=f"{model_key}_btn_export_outbox",
             disabled=(not agent_id),
         ):
-            # Call the function to purge
+            # Call the function to export the outbox
             result = call_api(
                 endpoint="action/walker/wppconnect_action/export_outbox",
                 json_data={"agent_id": agent_id},
@@ -135,12 +135,50 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             except Exception as e:
                 st.error(f"Import failed: {e}")
 
+    with st.expander("Resend Failed Outbox", False):
+
+        # Step 1: Trigger confirmation
+        if st.button("Resend", key=f"{model_key}_btn_resend_outbox_item"):
+            result = call_api(
+                endpoint="action/walker/wppconnect_action/resend_failed_outbox",
+                json_data={"agent_id": agent_id},
+            )
+            if result and result.status_code == 200:
+                result = get_reports_payload(result)
+                st.success("Resend outbox successfully")
+                st.success(result.get("message"))
+                if result.get("sessions"):
+                    st.write("Failed sessions:")
+                    st.write(result.get("sessions"))
+                
+            else:
+                st.success("Resend outbox failed")
+
+
     with st.expander("Purge Outbox", False):
         job_id = st.text_input(
+            "Job ID to purge",
+            value="",
+            key=f"{model_key}_job_id",
+        )
+
+        status = st.multiselect(
+            "Status",
+            ["PENDING", "PROCESSED", "FAILED"],
+            key=f"{model_key}_status",
+        )
+
+        item_id = st.text_input(
             "Item ID to purge",
             value="",
             key=f"{model_key}_item_id",
         )
+
+        purge_outbox = False
+
+        if not item_id and not job_id and not status:
+            purge_outbox = True
+            
 
         if job_id:
             button_text = "Yes, Purge outbox item"
@@ -168,7 +206,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 if st.button(button_text):
                     result = call_api(
                         endpoint="action/walker/wppconnect_action/purge_outbox",
-                        json_data={"agent_id": agent_id, "job_id": job_id},
+                        json_data={"purge": purge_outbox, "agent_id": agent_id, "job_id": job_id, "status": status, "item_id": item_id},
                     )
                     if result and result.status_code == 200:
                         purge_outbox_item = get_reports_payload(result)
@@ -426,6 +464,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
             # Use the total_items from the API response, not the length of current items
             total_items = data.get("total_items", 0)
+            processed_items = data.get("processed", 0)
+            pending_items = data.get("pending", 0)
+            failed_items = data.get("failed", 0)
+
             total_pages = data.get("total_pages", 1)
             if "items" in data and data["items"]:
 
@@ -569,14 +611,12 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         st.metric("Total Messages", total_items)
                     with col2:
                         st.metric(
-                            "Processed Messages", len(df[df["status"] == "PROCESSED"])
-                        )
+                            "Processed Messages", processed_items)
                     with col3:
                         st.metric(
-                            "Pending Messages", len(df[df["status"] == "PENDING"])
-                        )
+                            "Pending Messages", pending_items)
                     with col4:
-                        st.metric("Failed Messages", len(df[df["status"] == "FAILED"]))
+                        st.metric("Failed Messages", failed_items)
                 else:
                     st.warning("No outbox messages found")
             else:
@@ -608,7 +648,7 @@ def prepare_data(data: dict) -> pd.DataFrame:
             "status": message["status"],
             "session_id": message["session_id"],
             "message_type": message["message"]["message_type"],
-            "content": message["message"]["content"],
+            "content": str(message["message"]["content"]),
             "added_at": message["added_at"],
         }
         all_items.append(item)
