@@ -99,7 +99,7 @@ These guidelines help optimize performance and ensure compliance with WhatsApp's
 
 ### Broadcast Message
 
-**Endpoint:** `/action/walker`
+**Endpoint:** `/action/walker/wppconnect_action/broadcast_message`
 **Method:** `POST`
 
 #### Parameters
@@ -107,7 +107,6 @@ These guidelines help optimize performance and ensure compliance with WhatsApp's
 ```json
 {
    "agent_id": "<AGENT_ID>",
-   "walker": "broadcast_message",
    "module_root": "actions.jivas.wppconnect_action",
    "args": {
       "message": {
@@ -123,7 +122,7 @@ These guidelines help optimize performance and ensure compliance with WhatsApp's
 
 ### Send Messages
 
-**Endpoint:** `/action/walker`
+**Endpoint:** `/action/walker/wppconnect_action/send_messages`
 **Method:** `POST`
 
 #### Parameters
@@ -131,7 +130,6 @@ These guidelines help optimize performance and ensure compliance with WhatsApp's
 ```json
 {
    "agent_id": "<AGENT_ID>",
-   "walker": "send_messages",
    "module_root": "actions.jivas.wppconnect_action",
    "args": {
       "messages": [

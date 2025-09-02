@@ -163,8 +163,15 @@ walker wppconnect_interact(action_webhook_walker) {
             # first attempt efficient method of determining whether we have a tagged message
 
             # Look for @[receiver code before @] in the body
+            body = "";
+            if "body" in data{
+                body = data["body"];
+            } elif "caption" in data {
+                body = data["caption"];
+            }
+
             ::py::
-            match = re.search( r"@(\d+)", (data['body'].strip()) )
+            match = re.search( r"@(\d+)", (body.strip()) )
             ::py::
 
             if not match {
@@ -174,7 +181,7 @@ walker wppconnect_interact(action_webhook_walker) {
             tagged_id = match.group(1);
             receiver = data.get('receiver').split('@')[0] if data.get('receiver') else '';
             # Remove all occurrences of the pattern in the body (case-insensitive)
-            data['body'] = re.sub(tagged_id, "", data['body'], flags=re.IGNORECASE).strip();
+            body = re.sub(tagged_id, "", body, flags=re.IGNORECASE).strip();
 
             if(tagged_id == receiver) {
                 return True;
@@ -379,7 +386,7 @@ walker wppconnect_interact(action_webhook_walker) {
                 verbose = False,
                 reporting = False,
                 channel = "whatsapp",
-                data = {"whatsapp_media": data}
+                data = {"whatsapp_poll": data}
             )).message;
 
             action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
