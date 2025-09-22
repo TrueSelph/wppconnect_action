@@ -7,7 +7,7 @@ import from jivas.agent.action.actions { Actions }
 import from jivas.agent.modules.action.path { action_walker_path }
 
 import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
-import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
+# import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
 
 
 walker send_messages(agent_graph_walker) {
@@ -105,7 +105,7 @@ walker send_messages(agent_graph_walker) {
     has messages:list = [];
     has callback_url:str = '';
     has response:str = '';
-    has status: OutboxItemStatus = OutboxItemStatus.PENDING;
+    # has status: OutboxItemStatus = OutboxItemStatus.PENDING;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -124,7 +124,7 @@ walker send_messages(agent_graph_walker) {
     }
 
     can on_action with Action entry {
-        self.response = here.add_outbox_job(status=self.status, messages=self.messages, callback_url=self.callback_url);
+        # self.response = here.add_outbox_job(status=self.status, messages=self.messages, callback_url=self.callback_url);
 
         if self.reporting {
             report self.response;

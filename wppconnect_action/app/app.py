@@ -1,67 +1,162 @@
-"""This module contains the Streamlit app for the WhatsApp Connect action."""
+"""Streamlit app for WhatsApp Connect action with improved structure and error handling."""
 
 import json
 import time
+import re
+import logging
 from contextlib import suppress
+from typing import Any, Dict, List, Optional, Callable
 
 import pandas as pd
 import streamlit as st
 import yaml
 from jvclient.lib.utils import call_api, get_reports_payload
 from jvclient.lib.widgets import app_controls, app_header, app_update_action
+from requests import HTTPError
 from streamlit_router import StreamlitRouter
 
+# Constants
+API_TIMEOUT = 30
+AUTO_REFRESH_INTERVAL = 5
+PAGE_SIZES = [5, 10, 20, 50, 100, 200]
+DEFAULT_PAGE_SIZE = 10
 
-def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -> None:
+# Validation and sanitization helpers
+def validate_job_id(job_id: str) -> bool:
+    """Validate job ID format (alphanumeric with dashes)."""
+    return not job_id or bool(re.match(r"^[a-zA-Z0-9\-_]+$", job_id))
+
+def validate_item_id(item_id: str) -> bool:
+    """Validate item ID format (UUID)."""
+    return not item_id or bool(
+        re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", item_id)
+    )
+
+def sanitize_html(content: str) -> str:
+    """ TODO: Safe HTML sanitization."""
+    return content
+
+class StateManager:
+    """Centralized session state management for WPPConnect."""
+    
+    def __init__(self, agent_id: str, action_id: str):
+        self.prefix = f"wpp_{agent_id}_{action_id}"
+        
+    def get(self, key: str, default=None) -> Any:
+        return st.session_state.get(f"{self.prefix}_{key}", default)
+        
+    def set(self, key: str, value: Any) -> None:
+        st.session_state[f"{self.prefix}_{key}"] = value
+        
+    def delete(self, key: str) -> None:
+        if f"{self.prefix}_{key}" in st.session_state:
+            del st.session_state[f"{self.prefix}_{key}"]
+            
+    def init_state(self, key: str, default=None) -> None:
+        if f"{self.prefix}_{key}" not in st.session_state:
+            self.set(key, default)
+            
+    def clear_all(self) -> None:
+        keys = list(st.session_state.keys())
+        for key in keys:
+            if key.startswith(self.prefix):
+                del st.session_state[key]
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+def handle_api_call(
+    endpoint: str, 
+    json_data: Dict[str, Any], 
+    success_message: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """
-    Render the Streamlit app for the WhatsApp Connect action.
-
-    :param router: The Streamlit Router object.
-    :param agent_id: The ID of the agent.
-    :param action_id: The ID of the action.
-    :param info: A dictionary containing information about the action.
+    Standardized API call handler with error handling and logging.
+    
+    :param endpoint: API endpoint to call
+    :param json_data: JSON payload for the request
+    :param success_message: Message to display on success
+    :return: Parsed response data or None on failure
     """
-    (model_key, module_root) = app_header(agent_id, action_id, info)
+    try:
+        result = call_api(endpoint=endpoint, json_data=json_data, timeout=API_TIMEOUT)
+        if not result:
+            raise ConnectionError("No response from API")
+        if result.status_code != 200:
+            raise ConnectionError(f"API returned status {result.status_code}: {result.text}")
+        
+        response_data = get_reports_payload(result)
+        if not response_data:
+            return None
+        
+        if success_message:
+            st.success(success_message)
+        return response_data
+        
+    except ConnectionError as ce:
+        error_msg = f"Connection error: {str(ce)}"
+        logger.error(error_msg)
+        st.error(error_msg)
+    except HTTPError as he:
+        error_msg = f"HTTP error {he.response.status_code}: {he.response.text}"
+        logger.error(error_msg)
+        st.error(f"API request failed with status {he.response.status_code}")
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.exception(error_msg)
+        st.error(error_msg)
+    
+    return None
 
-    with st.expander("WPPConnect Configuration", expanded=False):
-        # Add main app controls
-        app_controls(agent_id, action_id)
-        # Add update button to apply changes
-        app_update_action(agent_id, action_id)
+def validated_input(
+    label: str, 
+    value: str, 
+    validation_fn: Callable[[str], bool], 
+    error_msg: str, 
+    key: str
+) -> Optional[str]:
+    """
+    Create a validated text input with error messaging.
+    
+    :param label: Input label
+    :param value: Default value
+    :param validation_fn: Validation function
+    :param error_msg: Error message to display
+    :param key: Unique key for Streamlit widget
+    :return: Validated value or None if invalid
+    """
+    input_val = st.text_input(label, value, key=key)
+    if input_val and not validation_fn(input_val):
+        st.error(error_msg)
+        return None
+    return input_val
 
+# Section rendering functions
+def _render_export_outbox(state: StateManager, model_key: str, agent_id: str) -> None:
+    """Render the Export Outbox section."""
     with st.expander("Export Outbox", False):
         if st.button(
             "Export Outbox",
             key=f"{model_key}_btn_export_outbox",
-            disabled=(not agent_id),
+            disabled=not agent_id,
         ):
-            # Call the function to export the outbox
-            result = call_api(
+            outbox_result = handle_api_call(
                 endpoint="action/walker/wppconnect_action/export_outbox",
                 json_data={"agent_id": agent_id},
+                success_message="Export outbox successfully"
             )
-
-            if result and result.status_code == 200:
-                outbox_result = get_reports_payload(result)
-
-                if outbox_result:
-                    st.download_button(
-                        label="Download Exported Outbox",
-                        data=json.dumps(outbox_result, indent=2),
-                        file_name="exported_outbox.json",
-                        mime="application/json",
-                    )
-                    st.success("Export outbox successfully")
-                    st.json(outbox_result)
-                else:
-                    st.error(
-                        "Failed to export outbox. Ensure that there is something to export"
-                    )
-            else:
-                st.error(
-                    "Failed to export putbox. Ensure that there is something to export"
+            
+            if outbox_result:
+                st.download_button(
+                    label="Download Exported Outbox",
+                    data=json.dumps(outbox_result, indent=2),
+                    file_name="exported_outbox.json",
+                    mime="application/json",
                 )
+                st.json(outbox_result)
 
+def _render_import_outbox(state: StateManager, model_key: str, agent_id: str) -> None:
+    """Render the Import Outbox section."""
     with st.expander("Import Outbox", False):
         outbox_source = st.radio(
             "Choose data source:",
@@ -95,7 +190,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         if st.button(
             "Import Outbox",
             key=f"{model_key}_btn_import_outbox",
-            disabled=(not agent_id),
+            disabled=not agent_id,
         ):
             try:
                 if outbox_source == "Upload file" and uploaded_file:
@@ -106,7 +201,6 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         data_to_import = yaml.safe_load(file_content)
 
                 elif outbox_source == "Text input" and raw_text_input.strip():
-                    # Try JSON first, fall back to YAML
                     try:
                         data_to_import = json.loads(raw_text_input)
                     except json.JSONDecodeError:
@@ -115,50 +209,44 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 if data_to_import is None:
                     st.error("No valid outbox data provided.")
                 else:
-                    outbox = {}
                     outbox = data_to_import.get("outbox", data_to_import)
-
-                    result = call_api(
+                    handle_api_call(
                         endpoint="action/walker/wppconnect_action/import_outbox",
                         json_data={
                             "agent_id": agent_id,
                             "outbox": outbox,
                             "purge_collection": purge_collection,
                         },
+                        success_message="Import outbox successfully"
                     )
-                    if result and result.status_code == 200:
-                        st.success("Import outbox successfully")
-                    else:
-                        st.error(
-                            "Failed to import outbox. Ensure that there is something to import."
-                        )
             except Exception as e:
+                logger.error(f"Import outbox failed: {str(e)}", exc_info=True)
                 st.error(f"Import failed: {e}")
 
+def _render_resend_failed_outbox(state: StateManager, model_key: str, agent_id: str) -> None:
+    """Render the Resend Failed Outbox section."""
     with st.expander("Resend Failed Outbox", False):
-
-        # Step 1: Trigger confirmation
         if st.button("Resend", key=f"{model_key}_btn_resend_outbox_item"):
-            result = call_api(
+            response = handle_api_call(
                 endpoint="action/walker/wppconnect_action/resend_failed_outbox",
                 json_data={"agent_id": agent_id},
+                success_message="Resend outbox successfully"
             )
-            if result and result.status_code == 200:
-                result = get_reports_payload(result)
-                st.success("Resend outbox successfully")
-                st.success(result.get("message"))
-                if result.get("sessions"):
+            if response:
+                st.success(response.get("message"))
+                if response.get("sessions"):
                     st.write("Failed sessions:")
-                    st.write(result.get("sessions"))
+                    st.write(response.get("sessions"))
 
-            else:
-                st.success("Resend outbox failed")
-
+def _render_purge_outbox(state: StateManager, model_key: str, agent_id: str) -> None:
+    """Render the Purge Outbox section."""
     with st.expander("Purge Outbox", False):
-        job_id = st.text_input(
+        job_id = validated_input(
             "Job ID to purge",
-            value="",
-            key=f"{model_key}_job_id",
+            "",
+            validate_job_id,
+            "Job ID must be alphanumeric with dashes and underscores only",
+            f"{model_key}_job_id"
         )
 
         status = st.multiselect(
@@ -167,16 +255,15 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             key=f"{model_key}_status",
         )
 
-        item_id = st.text_input(
+        item_id = validated_input(
             "Item ID to purge",
-            value="",
-            key=f"{model_key}_item_id",
+            "",
+            validate_item_id,
+            "Item ID must be a valid UUID format",
+            f"{model_key}_item_id"
         )
 
-        purge_outbox = False
-
-        if not item_id and not job_id and not status:
-            purge_outbox = True
+        purge_outbox = not (item_id or job_id or status)
 
         if job_id:
             button_text = "Yes, Purge outbox item"
@@ -187,22 +274,17 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             message = "Outbox purged successfully"
             confirm_message = "Are you sure you want to purge the outbox? This action cannot be undone."
 
-        # Step 1: Trigger confirmation
         if st.button("Purge", key=f"{model_key}_btn_purge_outbox_item"):
-            st.session_state.confirm_purge_collection = True
-            st.session_state.purge_outbox_item = None  # Clear any previous result
+            state.set("confirm_purge_collection", True)
+            state.set("purge_outbox_item", None)
 
-        # Step 2: Handle confirmation prompt
-        if st.session_state.get("confirm_purge_collection", False):
-            st.warning(
-                confirm_message,
-                icon="⚠️",
-            )
+        if state.get("confirm_purge_collection", False):
+            st.warning(confirm_message, icon="⚠️")
             col1, col2 = st.columns(2)
 
             with col1:
                 if st.button(button_text):
-                    result = call_api(
+                    purge_outbox_item = handle_api_call(
                         endpoint="action/walker/wppconnect_action/purge_outbox",
                         json_data={
                             "purge": purge_outbox,
@@ -211,93 +293,84 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                             "status": status,
                             "item_id": item_id,
                         },
+                        success_message=None
                     )
-                    if result and result.status_code == 200:
-                        purge_outbox_item = get_reports_payload(result)
-
-                        st.session_state.purge_outbox_item = purge_outbox_item
-                        st.session_state.confirm_purge_collection = False
-                    else:
-                        st.session_state.confirm_purge_collection = False
-                        st.session_state.purge_outbox_item = None
+                    state.set("confirm_purge_collection", False)
+                    state.set("purge_outbox_item", purge_outbox_item)
 
             with col2:
-                if st.button("no, cancel"):
-                    st.session_state.confirm_purge_collection = False
-                    st.session_state.purge_outbox_item = None
+                if st.button("No, cancel"):
+                    state.set("confirm_purge_collection", False)
+                    state.set("purge_outbox_item", None)
                     st.rerun()
 
-        # Step 3: Show result *outside* confirmation
-        purge_outbox_item = st.session_state.get("purge_outbox_item")
+        purge_outbox_item = state.get("purge_outbox_item")
         if purge_outbox_item:
             st.success(message)
-            st.session_state.purge_outbox_item = None  # Reset after showing
+            state.set("purge_outbox_item", None)
             time.sleep(2)
             st.rerun()
         elif purge_outbox_item in [False, []]:
-            st.error(
-                "Failed to purge outbox. Ensure that there is something to purge or check functionality"
-            )
-            st.session_state.purge_outbox_item = None  # Reset after showing
+            st.error("Failed to purge outbox. Ensure that there is something to purge or check functionality")
+            state.set("purge_outbox_item", None)
             time.sleep(2)
             st.rerun()
 
-    # Unique keys in session state for button control and data
-    session_payload_key = "wppconnect_payload"
-
+def _render_session_registration(state: StateManager, agent_id: str) -> None:
+    """Render the Session Registration section with reliable auto-refresh."""
     def get_wppconnect_status(auto_register: bool = False) -> None:
         """Call and store the latest status in session state."""
-        st.session_state[session_payload_key] = {}
-
-        result = call_api(
+        response = handle_api_call(
             endpoint="action/walker/wppconnect_action/register_session",
             json_data={"agent_id": agent_id, "auto_register": auto_register},
+            success_message=None
         )
-        if result and result.status_code == 200:
-            result = get_reports_payload(result)
-            st.session_state[session_payload_key] = result
+        if response:
+            state.set("session_payload", response)
+            state.set("last_refresh", time.time())
 
     def logout_wppconnect() -> None:
         """Logout session state."""
-        result = call_api(
+        if handle_api_call(
             endpoint="action/walker/wppconnect_action/logout_session",
             json_data={"agent_id": agent_id},
-        )
-        if result and result.status_code == 200:
-            st.session_state.pop(session_payload_key, None)
+            success_message=None
+        ):
+            state.set("session_payload", {})
+            state.set("last_refresh", time.time())
 
     def close_wppconnect() -> None:
         """Close session state."""
-        result = call_api(
+        if handle_api_call(
             endpoint="action/walker/wppconnect_action/close_session",
             json_data={"agent_id": agent_id},
-        )
-        if result and result.status_code == 200:
-            st.session_state.pop(session_payload_key, None)
+            success_message=None
+        ):
+            state.set("session_payload", {})
+            state.set("last_refresh", time.time())
 
-    # initialize the session state for wppconnect status
-    if session_payload_key not in st.session_state:
+    # Initialize auto-refresh timer
+    state.init_state("last_refresh", 0)
+        
+    # Fetch initial status if not present
+    if not state.get("session_payload"):
         get_wppconnect_status()
-        st.rerun()
-
-    result = st.session_state.get(session_payload_key, {})
-
+    
+    result = state.get("session_payload", {})
+    
     with st.expander("WPPConnect Session Registration", expanded=True):
-
         if result == {}:
             st.error(
-                f"{result.get("message", "Session registration error.")} Check your WPPConnect Configuration and try again.",
+                f"{result.get('message', 'Session registration error.')} Check your WPPConnect Configuration and try again.",
                 icon="❌",
             )
-            if st.button("Refresh", key="refresh_registration_btn"):
-                with st.spinner("Refreshing session..."):
+            if st.button("Refresh", key="manual_refresh_btn"):
+                with st.spinner("Refreshing..."):
                     get_wppconnect_status(auto_register=True)
                     st.rerun()
-            st.stop()
+            return
 
-        # Main logic block follows your requirements
         if result.get("status") == "CONNECTED":
-            # Step 2: Show connected + message + Logout button
             message = result.get("message", "Session is connected!")
             session = result.get("session")
             device = result.get("device", {}).get("response", {})
@@ -321,39 +394,25 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             )
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Center the Logout button
-            st.markdown(
-                '<div style="display:flex; justify-content:center;">',
-                unsafe_allow_html=True,
-            )
-
+            st.markdown('<div style="display:flex; justify-content:center;">', unsafe_allow_html=True)
             col1, col2, col3 = st.columns([2, 2, 10])
             with col1:
-                if st.button(
-                    "Logout",
-                    key="connected_logout_btn",
-                    help="Disconnect this WhatsApp session",
-                ):
+                if st.button("Logout", key="connected_logout_btn", help="Disconnect this WhatsApp session"):
                     with st.spinner("Logging out..."):
                         logout_wppconnect()
                         st.rerun()
-
             with col2:
                 if st.button("Close", key="connected_close_session_btn"):
                     with st.spinner("Closing session..."):
                         close_wppconnect()
                         st.rerun()
-
             st.markdown("</div>", unsafe_allow_html=True)
 
-        elif (
-            result.get("status") == "INITIALIZING"
-            or result.get("status") == "AWAITING_QR_SCAN"
-            and not result.get("qrcode")
-        ):
-            # Status is INITIALIZING and qrcode is not ready
+        elif (result.get("status") in ["INITIALIZING", "AWAITING_QR_SCAN"] and
+              not result.get("qrcode")):
             st.warning(
-                "Session is initializing. Please wait a moment. Click 'Refresh' to update status. If too much time elapses, click 'Close Session' to start again",
+                "Session is initializing. Please wait a moment. Click 'Refresh' to update status. "
+                "If too much time elapses, click 'Close Session' to start again",
                 icon="ℹ️",
             )
             st.markdown("<br>", unsafe_allow_html=True)
@@ -364,60 +423,38 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     with st.spinner("Refreshing session..."):
                         get_wppconnect_status(auto_register=True)
                         st.rerun()
-
             with col2:
                 if st.button("Close", key="init_close_session_btn"):
                     with st.spinner("Closing session..."):
                         close_wppconnect()
                         st.rerun()
 
-                # Auto-refresh every 5 seconds
-                st.rerun = getattr(st, "rerun", None)
-                if st.rerun:
-                    time.sleep(5)
-                    get_wppconnect_status()
-                    st.rerun()
-
         else:
-
             qrcode = result.get("qrcode", "")
-
             if not qrcode:
-                # Status is not CONNECTED and qrcode is missing or empty
-                st.info(
-                    "Session is not connected. Start a new session to get the QR Code.",
-                    icon="ℹ️",
-                )
+                st.info("Session is not connected. Start a new session to get the QR Code.", icon="ℹ️")
                 st.markdown("<br>", unsafe_allow_html=True)
-
                 col1, col2, col3 = st.columns([2, 2, 10])
                 with col1:
                     if st.button("Start", key="not_qr_start_session_btn"):
                         with st.spinner("Starting session..."):
                             get_wppconnect_status(auto_register=True)
                             st.rerun()
-
             else:
-
-                st.info(
-                    "Scan the QR code to connect your WhatsApp account.",
-                    icon="ℹ️",
-                )
+                st.info("Scan the QR code to connect your WhatsApp account.", icon="ℹ️")
                 try:
-                    # autocorrect the base64 qrcode
                     if not qrcode.startswith("data:image/png;base64,"):
                         qrcode = f"data:image/png;base64,{qrcode}"
-                    # Display the QR code centered
                     st.markdown(
                         f"""
                         <div style="display: flex; justify-content: center;">
                             <img src="{qrcode}" width="500">
                         </div>
                         """,
-                        unsafe_allow_html=True,
+                        unsafe_allow_html=True
                     )
                 except Exception as ex:
-                    st.error(f"There was an error rendering the QR code., {str(ex)}")
+                    st.error(f"There was an error rendering the QR code: {str(ex)}")
 
                 col1, col2, col3 = st.columns([2, 2, 10])
                 with col1:
@@ -425,241 +462,212 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         with st.spinner("Refreshing QR code..."):
                             get_wppconnect_status(auto_register=True)
                             st.rerun()
-
                 with col2:
                     if st.button("Close", key="qr_close_session_btn"):
                         with st.spinner("Closing session..."):
                             close_wppconnect()
                             st.rerun()
+                            
+        # Auto-update
+        if state.get("session_payload", {}).get("status") not in ["CONNECTED", "CLOSED"]:
+            time.sleep(AUTO_REFRESH_INTERVAL)
+            get_wppconnect_status(auto_register=False)
+            st.rerun()
+    
+    
 
-                # Auto-refresh every 5 seconds
-                st.rerun = getattr(st, "rerun", None)
-                if st.rerun:
-                    time.sleep(5)
-                    get_wppconnect_status()
-                    st.rerun()
+@st.cache_data(ttl=300, show_spinner="Loading outbox...")
+def _get_outbox_data(agent_id: str, page: int, per_page: int, session_filter: List[str], status_filter: List[str]) -> Dict[str, Any]:
+    """Fetch outbox data with caching."""
+    return handle_api_call(
+        endpoint="action/walker/wppconnect_action/list_outbox_items",
+        json_data={
+            "agent_id": agent_id,
+            "page": page,
+            "limit": per_page,
+            "filtered_sessions": session_filter,
+            "filtered_status": status_filter
+        },
+        success_message=None
+    )
 
+def _render_outbox(state: StateManager, agent_id: str) -> None:
+    """Render the Outbox section."""
     with st.expander("Outbox", True):
-        # Initialize session state variables for pagination
-        if "current_page" not in st.session_state:
-            st.session_state.current_page = 1
-        if "per_page" not in st.session_state:
-            st.session_state.per_page = 10
-        if "session_id" not in st.session_state:
-            st.session_state.session_id = []
-        if "status" not in st.session_state:
-            st.session_state.status = []
-
         args = {
             "agent_id": agent_id,
-            "page": st.session_state.current_page,
-            "limit": st.session_state.per_page,
-            "filtered_sessions": st.session_state.session_id,
-            "filtered_status": st.session_state.status,
+            "page": state.get("current_page", 1),
+            "per_page": state.get("per_page", DEFAULT_PAGE_SIZE),
+            "session_filter": state.get("session_id", []),
+            "status_filter": state.get("status", []),
         }
+        
+        data = _get_outbox_data(**args)
+        if not data:
+            st.warning("No outbox items found")
+            return
 
-        # Fetch documents with pagination parameters
-        result = call_api(
-            endpoint="action/walker/wppconnect_action/list_outbox_items", json_data=args
+        total_items = data.get("total_items", 0)
+        processed_items = data.get("processed", 0)
+        pending_items = data.get("pending", 0)
+        failed_items = data.get("failed", 0)
+        total_pages = data.get("total_pages", 1)
+        
+        if not data.get("items"):
+            st.warning("No outbox messages found")
+            return
+
+        df = prepare_data(data["items"])
+        
+        if df.empty:
+            st.warning("No outbox messages found")
+            return
+
+        if "date" in df.columns and "time" in df.columns:
+            df["datetime"] = df["date"].astype(str) + " " + df["time"].astype(str)
+            with suppress(Exception):
+                df["datetime"] = pd.to_datetime(df["datetime"])
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            prev_status_filter = state.get("status", [])
+            status_filter = st.multiselect(
+                "Filter by status",
+                options=sorted(["FAILED", "PENDING", "PROCESSED"]),
+                default=prev_status_filter,
+            )
+            if status_filter != prev_status_filter:
+                state.set("status", status_filter)
+                state.set("current_page", 1)  # Reset to first page when filter changes
+                st.rerun()
+
+        with col2:
+            prev_batch_filter = state.get("session_id", [])
+            batch_filter = st.multiselect(
+                "Filter by Session ID",
+                options=sorted(data["sessions"]),
+                default=prev_batch_filter,
+            )
+            if batch_filter != prev_batch_filter:
+                state.set("session_id", batch_filter)
+                state.set("current_page", 1)  # Reset to first page when filter changes
+                st.rerun()
+
+        with col3:
+            per_page = st.selectbox(
+                "Items per page",
+                options=PAGE_SIZES,
+                index=PAGE_SIZES.index(state.get("per_page", DEFAULT_PAGE_SIZE)),
+                key="per_page_selector",
+            )
+            if per_page != state.get("per_page"):
+                state.set("per_page", per_page)
+                state.set("current_page", 1)  # Reset to first page when page size changes
+                st.rerun()
+
+        st.dataframe(
+            df[[
+                "id", "session_id", "content", 
+                "message_type", "status", "datetime"
+            ]],
+            column_config={
+                "id": "Message ID",
+                "session_id": "Session ID",
+                "content": st.column_config.TextColumn("Content", width="large"),
+                "message_type": "Type",
+                "status": st.column_config.TextColumn("Status", width="small"),
+                "datetime": "Date & Time",
+            },
+            hide_index=True,
+            use_container_width=True,
         )
 
-        if result.status_code == 200:
-            data = get_reports_payload(result)
+        current_page = state.get("current_page", 1)
+        col1, col2, col3 = st.columns([2, 4, 2])
+        with col1:
+            if st.button("⬅️ Previous Page", disabled=current_page <= 1):
+                state.set("current_page", current_page - 1)
+                st.rerun()
+        with col2:
+            st.markdown(
+                f"<div style='text-align: center;'>"
+                f"Showing {len(df)} of {total_items} messages "
+                f"(Page {current_page} of {total_pages})"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        with col3:
+            if st.button("Next Page ➡️", disabled=current_page >= total_pages):
+                state.set("current_page", current_page + 1)
+                st.rerun()
 
-            # Use the total_items from the API response, not the length of current items
-            total_items = data.get("total_items", 0)
-            processed_items = data.get("processed", 0)
-            pending_items = data.get("pending", 0)
-            failed_items = data.get("failed", 0)
+        st.write("---")
+        st.subheader("Message Statistics")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Messages", total_items)
+        col2.metric("Processed Messages", processed_items)
+        col3.metric("Pending Messages", pending_items)
+        col4.metric("Failed Messages", failed_items)
+        
+        # Add refresh button for outbox
+        if st.button("🔄 Refresh Outbox", key="refresh_outbox_btn"):
+            st.cache_data.clear()
+            st.rerun()
 
-            total_pages = data.get("total_pages", 1)
-            if "items" in data and data["items"]:
-
-                df = prepare_data(data["items"])
-
-                # Combine date and time columns if they exist
-                if "date" in df.columns and "time" in df.columns:
-                    df["datetime"] = (
-                        df["date"].astype(str) + " " + df["time"].astype(str)
-                    )
-                    # Convert to datetime if needed pass
-                    with suppress(Exception):
-                        df["datetime"] = pd.to_datetime(df["datetime"])
-
-                if not df.empty:
-                    # Create columns for filters
-
-                    col1, col2, col3 = st.columns(3)
-
-                    with col1:
-                        prev_status_filter = st.session_state.status
-                        # Status filter - empty by default shows all
-                        status_filter = st.multiselect(
-                            "Filter by status",
-                            options=sorted(["FAILED", "PENDING", "PROCESSED"]),
-                            default=(
-                                st.session_state.status
-                                if st.session_state.status
-                                else []
-                            ),
-                        )
-                        st.session_state.status = status_filter
-
-                        # If status changed, trigger a rerun
-                        if status_filter != prev_status_filter:
-                            st.rerun()
-
-                    with col2:
-                        prev_batch_filter = st.session_state.session_id
-                        # Batch ID filter - empty by default shows all
-                        batch_filter = st.multiselect(
-                            "Filter by Session ID",
-                            options=sorted(data["sessions"]),
-                            default=(
-                                st.session_state.session_id
-                                if st.session_state.session_id
-                                else []
-                            ),
-                        )
-                        st.session_state.session_id = batch_filter
-                        # If session_id changed, trigger a rerun
-                        if batch_filter != prev_batch_filter:
-                            st.rerun()
-
-                    with col3:
-                        # Store previous per_page value
-                        prev_per_page = st.session_state.per_page
-
-                        # Per-page selection dropdown
-                        per_page = st.selectbox(
-                            "Items per page",
-                            options=[5, 10, 20, 50, 100, 200],
-                            index=[5, 10, 20, 50, 100, 200].index(
-                                st.session_state.per_page
-                            ),
-                            key="per_page_selector",
-                            on_change=lambda: setattr(
-                                st.session_state, "current_page", 1
-                            ),
-                        )
-                        # Update per_page in session state
-                        st.session_state.per_page = per_page
-
-                        # If per_page changed, trigger a rerun
-                        if per_page != prev_per_page:
-                            st.rerun()
-
-                    # Apply filters
-                    df_filtered = df.copy()
-
-                    # Display the data with adjusted column widths
-                    st.dataframe(
-                        df_filtered[
-                            [
-                                "id",
-                                "session_id",
-                                "content",
-                                "message_type",
-                                "status",
-                                "datetime",
-                            ]
-                        ],
-                        column_config={
-                            "id": "Message ID",
-                            "session_id": "Session ID",
-                            "content": st.column_config.TextColumn(
-                                "Content", width="large"
-                            ),
-                            "message_type": "Type",
-                            "status": st.column_config.TextColumn(
-                                "Status", width="small"
-                            ),
-                            "datetime": "Date & Time",
-                        },
-                        hide_index=True,
-                        use_container_width=True,
-                    )
-
-                    # Pagination controls at the bottom
-                    col1, col2, col3 = st.columns([2, 4, 2])
-
-                    with col1:
-                        if st.session_state.current_page > 1:
-                            if st.button("⬅️ Previous Page"):
-                                st.session_state.current_page -= 1
-                                st.rerun()
-                        else:
-                            st.button("⬅️ Previous Page", disabled=True)
-
-                    with col2:
-                        # Centered pagination info
-                        st.markdown(
-                            f"<div style='text-align: center;'>Showing {len(df_filtered)} of {total_items} messages (Page {st.session_state.current_page} of {total_pages})</div>",
-                            unsafe_allow_html=True,
-                        )
-
-                    with col3:
-                        if st.session_state.current_page < total_pages:
-                            if st.button("Next Page ➡️"):
-                                st.session_state.current_page += 1
-                                st.rerun()
-                        else:
-                            st.button("Next Page ➡️", disabled=True)
-
-                    # Message statistics
-                    st.write("---")
-                    st.subheader("Message Statistics")
-
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total Messages", total_items)
-                    with col2:
-                        st.metric("Processed Messages", processed_items)
-                    with col3:
-                        st.metric("Pending Messages", pending_items)
-                    with col4:
-                        st.metric("Failed Messages", failed_items)
-                else:
-                    st.warning("No outbox messages found")
-            else:
-                st.warning("No outbox messages found")
-        else:
-            st.warning("No outbox items found")
-
-
-def prepare_data(data: dict) -> pd.DataFrame:
+def prepare_data(data: list) -> pd.DataFrame:
     """
-    Transforms a list of message dictionaries into a pandas DataFrame, extracting
-    relevant fields and converting date and time information.
-
+    Transforms message data into a pandas DataFrame.
+    
     Args:
-        data (list): A list of dictionaries, each representing a message with fields
-                     such as 'session_id', 'item_id', 'status', 'session_id', 'message',
-                     and 'added_at'.
-
+        data: List of message dictionaries
+        
     Returns:
-        pandas.DataFrame: A DataFrame containing the extracted message data with
-                          additional columns for date and time if available.
+        DataFrame containing extracted message data
     """
-
-    all_items = []
-
-    for message in data:
-        item = {
-            "id": message["item_id"],
-            "status": message["status"],
-            "session_id": message["session_id"],
-            "message_type": message["message"]["message_type"],
-            "content": str(message["message"]["content"]),
-            "added_at": message["added_at"],
-        }
-        all_items.append(item)
-    df = pd.DataFrame(all_items)
-
+    items = [{
+        "id": msg["item_id"],
+        "status": msg["status"],
+        "session_id": msg["session_id"],
+        "message_type": msg["message"]["message_type"],
+        "content": str(msg["message"]["content"]),
+        "added_at": msg["added_at"]
+    } for msg in data]
+    
+    df = pd.DataFrame(items)
+    
     if not df.empty:
-        # Convert datetime
         df["added_at"] = pd.to_datetime(df["added_at"])
         df["date"] = df["added_at"].dt.date
         df["time"] = df["added_at"].dt.time
-
+        
     return df
+
+def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -> None:
+    """Main render function for WhatsApp Connect action."""
+    state = StateManager(agent_id, action_id)
+    model_key, module_root = app_header(agent_id, action_id, info)
+    
+    # Initialize state variables
+    for key, default in [
+        ("session_payload", {}),
+        ("confirm_purge_collection", False),
+        ("purge_outbox_item", None),
+        ("current_page", 1),
+        ("per_page", DEFAULT_PAGE_SIZE),
+        ("session_id", []),
+        ("status", []),
+        ("last_refresh", 0)
+    ]:
+        state.init_state(key, default)
+
+    with st.expander("WPPConnect Configuration", expanded=False):
+        app_controls(agent_id, action_id)
+        app_update_action(agent_id, action_id)
+
+    # Render sections
+    # _render_export_outbox(state, model_key, agent_id)
+    # _render_import_outbox(state, model_key, agent_id)
+    # _render_resend_failed_outbox(state, model_key, agent_id)
+    # _render_purge_outbox(state, model_key, agent_id)
+    # _render_outbox(state, agent_id)
+    _render_session_registration(state, agent_id)
