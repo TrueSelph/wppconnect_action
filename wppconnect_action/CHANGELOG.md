@@ -137,3 +137,7 @@ poll_im.data = {
 
 ## 0.1.7
 - Added import and export collections
+
+## 0.1.8
+- Removed outbox from wppconnect_action
+- 
