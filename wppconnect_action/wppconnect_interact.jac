@@ -316,13 +316,13 @@ walker wppconnect_interact(action_webhook_walker) {
             # default utterance
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
-            
+
             # grab an open media collection or create a new one for this session
             media_collection = action_node.get_open_media_collection(session_id=frame_node.session_id, create=True);
 
             # if this is a new collection, we need to spawn scheduler to monitor it
             action_node.monitor_media();
-            
+
             # decode base64 encoded data into bytes
             file_data = base64.b64decode(data['media']);
             name = data["message_id"].split(".")[1];
@@ -352,7 +352,7 @@ walker wppconnect_interact(action_webhook_walker) {
                 file_url = file_url,
                 media_type = data['message_type'],
                 data = data
-            );           
+            );
         }
     }
 

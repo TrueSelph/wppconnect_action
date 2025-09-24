@@ -7,10 +7,10 @@ import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 node MediaCollection(GraphNode) {
     # collection of media items, designed to serve as a grouping node for WhatsappMedia items sent in a batch
-    
+
     has collection_id:str = "";
     has session_id:str = "";
-    has status:MediaCollectionStatus = MediaCollectionStatus.OPEN;  
+    has status:MediaCollectionStatus = MediaCollectionStatus.OPEN;
     has created_on:str = str((datetime.now(timezone.utc)).isoformat());
     has updated_on:str = str((datetime.now(timezone.utc)).isoformat());
 
@@ -43,7 +43,7 @@ node MediaCollection(GraphNode) {
         # exports the media items in a serializable format
         media_items = self.get_media_items();
         return [item.export() for item in media_items];
-    }   
+    }
 
     def add_media_item(file_url:str, media_type:str, data:dict={}) -> MediaItem {
         # adds a media item to this collection

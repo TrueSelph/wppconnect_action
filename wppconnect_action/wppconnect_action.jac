@@ -53,8 +53,8 @@ node WPPConnectAction(Action) {
     has sync_avatar:bool = True; # set Agent avatar (if present and set) as profile pic
     # poll settings
     has poll_manager_action:str = "PollManagerInteractAction"; # the label of the poll manager action to use for polls
-    
-    
+
+
     def postinit {
         super.postinit();
         # list of node attributes which should be excluded from export
@@ -322,21 +322,23 @@ node WPPConnectAction(Action) {
         agent_node = self.get_agent();
         job_id = str(uuid.uuid4());
 
-        if(frames := agent_node.get_memory().get_frames() ) {
+        if((frames := agent_node.get_memory().get_frames()) and (outbox_action := self.get_agent().get_action(action_label="OutboxAction"))) {
             # get all frames then proceed to broadcast
             for frame_node in frames {
                 if(frame_node.session_id not in ignore_list) {
                     if(interaction_node := frame_node.get_last_interaction()) {
                         if interaction_node.channel in ['whatsapp'] {
                             # add the message to the outbox
-                            # self.add_outbox_item(status=OutboxItemStatus.PENDING, job_id=job_id, session_id=frame_node.session_id, message=message);
+                            messages = [{
+                                "to": frame_node.session_id,
+                                "message": message,
+                                "channel": "whatsapp"
+                            }];
+                            outbox_action.add_outbox_job(sender_action=self.get_type(), callback_url=self.webhook_url, messages=messages);
                         }
                     }
                 }
             }
-
-            # start the outbox scheduler
-            # self.start_outbox_scheduler();
             return job_id;
         }
 
@@ -392,7 +394,7 @@ node WPPConnectAction(Action) {
         # let's clean up..remove the media collection
         media_collection.delete();
     }
-    
+
     def get_open_media_collection(session_id:str, create:bool=False) -> MediaCollection {
         # Returns an existing open media collection for the session, or creates a new one if none exists.
         collection = self.get_collection();
@@ -518,8 +520,13 @@ node WPPConnectAction(Action) {
             result = media_collection.delete();
             self.logger.warning(f"purged collection {result}");
         }
-        
+
         return bool(media_collections);  # True if any were deleted
+    }
+
+    def send_outbox_message(session_id:str, message:InteractionMessage) -> dict {
+        # sends an wppconnect message to a specified session_id via the action
+        return self.send_message(session_id=session_id, message=message);
     }
 
 }
