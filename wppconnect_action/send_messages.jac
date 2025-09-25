@@ -104,6 +104,7 @@ walker send_messages(agent_graph_walker) {
     has messages:list = [];
     has callback_url:str = '';
     has response:str = '';
+    has outbox:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -118,15 +119,26 @@ walker send_messages(agent_graph_walker) {
     }
 
     can on_actions with Actions entry {
-        visit [-->](`?Action)(?enabled==True)(?label=='OutboxAction');
+        if self.outbox {
+            visit [-->](`?Action)(?enabled==True)(?label=='OutboxAction');
+        } else {
+            visit [-->](`?Action)(?enabled==True)(?label=='WPPConnectAction');
+        }
     }
 
     can on_action with Action entry {
-
-        for message in self.messages {
-            message["channel"] = "whatsapp";
+        if self.outbox {
+            for message in self.messages {
+                message["channel"] = "whatsapp";
+            }
+            self.response = here.add_outbox_job(sender_action="WPPConnectAction", callback_url=self.callback_url, messages=self.messages);
+        } else {
+            for message in self.messages {
+                interaction_message = here.prepare_interaction_message(message["message"]);
+                self.response = here.send_message(session_id=message["to"], message = interaction_message, is_group = False, parent_message_id = "");
+            }
         }
-        self.response = here.add_outbox_job(sender_action="WPPConnectAction", callback_url=self.callback_url, messages=self.messages);
+
 
         if self.reporting {
             report self.response;

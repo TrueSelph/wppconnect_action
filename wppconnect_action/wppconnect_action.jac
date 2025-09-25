@@ -345,6 +345,37 @@ node WPPConnectAction(Action) {
         return None;
     }
 
+    def prepare_interaction_message(message:dict) -> InteractionMessage {
+        # prepare the interaction message object based on the dict representation
+        if not message {
+            return None;
+        }
+
+        message_type = message.get('message_type');
+
+        if message_type == MessageType.TEXT.value {
+            interaction_message = TextInteractionMessage();
+            interaction_message.load(message);
+        } elif message_type == MessageType.MEDIA.value {
+            interaction_message = MediaInteractionMessage();
+            interaction_message.load(message);
+        } elif message_type == MessageType.MULTI.value {
+            interaction_message = MultiInteractionMessage();
+            for message_item in message.get("content") {
+                message_item_type = message_item.get("message_type");
+                if message_item_type == MessageType.TEXT.value {
+                    interaction_message.add_interaction_message(TextInteractionMessage(content=message_item.get("content")));
+                } elif message_item_type == MessageType.MEDIA.value {
+                    interaction_message.add_interaction_message(MediaInteractionMessage(mime=message_item.get("mime"), content=message_item.get("content"), data=message_item.get("data")));
+                }
+            }
+        } else {
+            return None;
+        }
+
+        return interaction_message;
+    }
+
     # --------------- MEDIA MONITOR ----------------
 
     def start_pulse() {

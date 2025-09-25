@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+from datetime import datetime
 from typing import Any, Callable, Dict, Optional, Union
 
 import pandas as pd
@@ -416,3 +417,30 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
     # Render sections
     _render_session_registration(state, agent_id)
+
+    with st.expander("Send Message", expanded=False):
+        phone_number = st.text_input(label="Phone Number")
+        message = st.text_input(
+            label="Message",
+            value=f"This is a test message from whatsapp. Time {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        )
+        send_button = st.button(label="Send Message")
+        if send_button:
+            json_data = {
+                "agent_id": agent_id,
+                "messages": [
+                    {
+                        "to": phone_number,
+                        "message": {"message_type": "TEXT", "content": message},
+                    }
+                ],
+                "callback_url": "",
+                "outbox": False,
+            }
+            if handle_api_call(
+                endpoint="action/walker/wppconnect_action/send_messages",
+                json_data=json_data,
+                success_message=None,
+            ):
+                state.set("session_payload", {})
+                state.set("last_refresh", time.time())
