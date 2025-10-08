@@ -1,7 +1,7 @@
 """
 WWebJS API Wrapper with WPPConnect-compatible interface.
 
-This module provides a drop-in replacement for WPPConnectAPI that works with WWebJS backend.
+This module provides a drop-in replacement for WWebJSAPI that works with WWebJS backend.
 All method signatures remain the same for compatibility with existing code.
 
 New Features:
@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class WPPConnectAPI:
+class WWebJSAPI:
     """WWebJS API wrapper with WPPConnect-compatible interface."""
 
     logger = logging.getLogger(__name__)
@@ -138,7 +138,7 @@ class WPPConnectAPI:
     @staticmethod
     def parse_inbound_message(request: dict) -> dict:
         """Parses an inbound message request payload and returns extracted values."""
-        request = WPPConnectAPI.translate_wwebjs_to_wppconnect(request)
+        request = WWebJSAPI.translate_wwebjs_to_wppconnect(request)
         payload = {}
 
         try:
@@ -202,7 +202,7 @@ class WPPConnectAPI:
             return payload
 
         except Exception as e:
-            WPPConnectAPI.logger.error("Error parsing inbound message: %s", str(e))
+            WWebJSAPI.logger.error("Error parsing inbound message: %s", str(e))
             return {}
 
     @staticmethod
@@ -221,7 +221,7 @@ class WPPConnectAPI:
                 response = requests.head(url, allow_redirects=True)
                 detected_mime_type = response.headers.get("Content-Type")
             except requests.RequestException as e:
-                WPPConnectAPI.logger.error(f"Error making HEAD request: {e}")
+                WWebJSAPI.logger.error(f"Error making HEAD request: {e}")
         else:
             detected_mime_type = mime_type
 
@@ -338,7 +338,7 @@ class WPPConnectAPI:
             return encoded
 
         except Exception as e:
-            WPPConnectAPI.logger.error(f"[ERROR] Failed to fetch or encode file: {e}")
+            WWebJSAPI.logger.error(f"[ERROR] Failed to fetch or encode file: {e}")
             return None
 
     def list_files_in_folder(
@@ -1287,7 +1287,7 @@ class WPPConnectAPI:
 
     @staticmethod
     def translate_wwebjs_to_wppconnect(wwebjs_data: dict) -> dict:
-        # WPPConnectAPI.logger.info(f"wwebjs_data: {wwebjs_data}")
+        # WWebJSAPI.logger.info(f"wwebjs_data: {wwebjs_data}")
         """
         Translates message data from WWEBJS format to WPPConnect format.
 

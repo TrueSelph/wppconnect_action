@@ -8,7 +8,6 @@ import from logging { Logger }
 
 import from jivas.agent.modules.action.path { action_webhook_path }
 
-import from .modules.wppconnect_api { WPPConnectAPI }
 import from jivas.agent.core.agent { Agent }
 import from jivas.agent.memory.frame { Frame }
 import from jivas.agent.action.action { Action }
@@ -32,9 +31,6 @@ walker wppconnect_interact(action_webhook_walker) {
 
     can on_agent with Agent entry {
         action_node = here.get_actions().get(action_label='WPPConnectAction');
-        if action_node.api_is_wwebjs {
-            import from .modules.wwebjs_api { WPPConnectAPI }
-        }
 
         # grab payload from webhook call
         payload = self.get_request_json();
@@ -46,7 +42,7 @@ walker wppconnect_interact(action_webhook_walker) {
         }
 
         # parse data if we've gotten this far..
-        data = WPPConnectAPI.parse_inbound_message(request = payload);
+        data = action_node.api().parse_inbound_message(request = payload);
 
         if(not data) {
             Jac.get_context().status = 200;
@@ -293,7 +289,7 @@ walker wppconnect_interact(action_webhook_walker) {
                 audio_url = interact_object.response.get('response', {}).get('audio_url');
 
                 if(audio_url) {
-                    audio_base64 = WPPConnectAPI.file_url_to_base64(file_url=audio_url, force_prefix=False);
+                    audio_base64 = action_node.api().file_url_to_base64(file_url=audio_url, force_prefix=False);
                     # sends audio via wppconnect message using url
                     response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio_base64);
 
