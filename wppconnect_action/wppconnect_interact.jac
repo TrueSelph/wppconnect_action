@@ -31,6 +31,10 @@ walker wppconnect_interact(action_webhook_walker) {
     }
 
     can on_agent with Agent entry {
+        action_node = here.get_actions().get(action_label='WPPConnectAction');
+        if action_node.api_is_wwebjs {
+            import from .modules.wwebjs_api { WPPConnectAPI }
+        }
 
         # grab payload from webhook call
         payload = self.get_request_json();

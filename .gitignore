@@ -2,6 +2,7 @@
 *.pyc
 __pycache__
 venv
+.venv
 __jac_gen__/
 *.jir
 
@@ -37,6 +38,7 @@ build
 .DS_Store
 parser.out
 codegen_output*
+.idea
 
 *.rdb
 node_modules

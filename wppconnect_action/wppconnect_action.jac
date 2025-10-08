@@ -35,6 +35,7 @@ node WPPConnectAction(Action) {
     static has logger:Logger = logging.getLogger(__name__);
 
     has api_url:str = ""; # WPPConnect Server URL
+    has api_is_wwebjs: bool = False;
     has secret_key:str = ""; # WPPConnect Server Secret Key
     has token:str = ""; # WPPConnect Server API Key for this session
     has session:str = ""; # WPPConnect Server Instance ID
@@ -145,6 +146,9 @@ node WPPConnectAction(Action) {
 
     def api() -> WPPConnectAPI {
         # load the api instance
+        if self.api_is_wwebjs{
+            import from .modules.wwebjs_api { WPPConnectAPI }
+        }
 
         return WPPConnectAPI(
             api_url=self.api_url,
