@@ -57,20 +57,21 @@ These features enhance reliability and minimize disruptions during high-volume m
 
 To use the WPPConnect Action, you need to set up the following configuration parameters. These specify connection and behavioral details.
 
-| Parameter            | Type    | Description                                                                                    | Default       |
-|----------------------|---------|------------------------------------------------------------------------------------------------|---------------|
-| `api_url`            | string  | WPPConnect Server URL (e.g., `"https://your-wppconnect-server.com"`)                          | `""`          |
-| `secret_key`         | string  | WPPConnect Server Secret Key for authentication.                                               | `""`          |
-| `token`              | string  | WPPConnect Server API Key for this session.                                                    | `""`          |
-| `session`            | string  | WPPConnect Server Instance ID.                                                                 | `""`          |
-| `base_url`           | string  | JIVAS Base URL (your application's base URL).                                                  | `""`          |
-| `webhook_url`        | string  | JIVAS webhook endpoint for receiving WPPConnect messages.                                      | `""`          |
-| `request_timeout`    | float   | Length of time (in seconds) this action waits for the API to complete a request.               | `10.0`        |
-| `chunk_length`       | int     | Maximum length of message to send. Longer texts are split into subsequent messages.             | `1024`        |
-| `use_pushname`       | bool    | Use the WhatsApp push name as the user name when set to `True`.                                | `True`        |
-| `ignore_newsletters` | bool    | Ignore newsletter messages when set to `True`.                                                 | `True`        |
-| `ignore_forwards`    | bool    | Ignore forwarded messages when set to `True`.                                                  | `True`        |                                               | `10`        |
-| `poll_manager_action`    | str    | Action name to manage poll entries.                                                  | `PollManagerInteractAction`        |
+| Parameter             | Type   | Description                                                                                  | Default                     |
+|-----------------------|--------|----------------------------------------------------------------------------------------------|-----------------------------|
+| `api_url`             | string | WPPConnect Server URL (e.g., `"https://your-wppconnect-server.com"`)                         | `""`                        |
+| `api_is_wwebjs`       | bool   | Use the [whatsapp-web.js](https://wwebjs.dev/) version of `WPPConnectAPI` when set to `True` | `False`                     |
+| `secret_key`          | string | WPPConnect Server Secret Key for authentication.                                             | `""`                        |
+| `token`               | string | WPPConnect Server API Key for this session.                                                  | `""`                        |
+| `session`             | string | WPPConnect Server Instance ID.                                                               | `""`                        |
+| `base_url`            | string | JIVAS Base URL (your application's base URL).                                                | `""`                        |
+| `webhook_url`         | string | JIVAS webhook endpoint for receiving WPPConnect messages.                                    | `""`                        |
+| `request_timeout`     | float  | Length of time (in seconds) this action waits for the API to complete a request.             | `10.0`                      |
+| `chunk_length`        | int    | Maximum length of message to send. Longer texts are split into subsequent messages.          | `1024`                      |
+| `use_pushname`        | bool   | Use the WhatsApp push name as the user name when set to `True`.                              | `True`                      |
+| `ignore_newsletters`  | bool   | Ignore newsletter messages when set to `True`.                                               | `True`                      |
+| `ignore_forwards`     | bool   | Ignore forwarded messages when set to `True`.                                                | `True`                      |                                               | `10`        |
+| `poll_manager_action` | str    | Action name to manage poll entries.                                                          | `PollManagerInteractAction` |
 
 ---
 

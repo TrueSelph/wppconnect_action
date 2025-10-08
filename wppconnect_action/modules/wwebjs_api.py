@@ -75,7 +75,7 @@ class WPPConnectAPI:
         self.logger.info(f"Making {method} request to endpoint: {endpoint}")
         self.logger.debug(f"Request data: {data}")
         self.logger.debug(f"Request params: {params}")
-        
+
         # Always include x-api-key header for WWebJS
         if headers is None:
             headers = {}
@@ -86,7 +86,9 @@ class WPPConnectAPI:
                 self.logger.error("No secret_key provided for authentication")
                 return {"ok": False, "error": "secret_key required for authentication"}
             headers["x-api-key"] = self.secret_key
-            self.logger.debug(f"Added x-api-key header with secret_key: {self.secret_key[:10]}...")
+            self.logger.debug(
+                f"Added x-api-key header with secret_key: {self.secret_key[:10]}..."
+            )
 
         # Add Content-Type if not present and using JSON
         if json_body and "Content-Type" not in headers:
@@ -125,9 +127,7 @@ class WPPConnectAPI:
             self.logger.info("Response has no content")
             return {"ok": True, "no_content": True}
         except requests.Timeout:
-            self.logger.error(
-                f"WWebJS request timed out after {self.timeout} seconds."
-            )
+            self.logger.error(f"WWebJS request timed out after {self.timeout} seconds.")
             return {"ok": False, "error": f"Timeout after {self.timeout} seconds"}
         except requests.RequestException as e:
             self.logger.error(f"WWebJS request error: {str(e)}")
@@ -227,38 +227,80 @@ class WPPConnectAPI:
 
         mime_categories = {
             "image": [
-                "image/jpeg", "image/png", "image/gif", "image/bmp", "image/webp",
-                "image/tiff", "image/svg+xml", "image/x-icon", "image/heic",
-                "image/heif", "image/x-raw",
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/bmp",
+                "image/webp",
+                "image/tiff",
+                "image/svg+xml",
+                "image/x-icon",
+                "image/heic",
+                "image/heif",
+                "image/x-raw",
             ],
             "document": [
-                "application/pdf", "application/msword",
+                "application/pdf",
+                "application/msword",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.ms-excel",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "application/vnd.ms-powerpoint",
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "text/plain", "text/csv", "text/html", "application/rtf",
-                "application/x-tex", "application/vnd.oasis.opendocument.text",
+                "text/plain",
+                "text/csv",
+                "text/html",
+                "application/rtf",
+                "application/x-tex",
+                "application/vnd.oasis.opendocument.text",
                 "application/vnd.oasis.opendocument.spreadsheet",
-                "application/epub+zip", "application/x-mobipocket-ebook",
-                "application/x-fictionbook+xml", "application/x-abiword",
-                "application/vnd.apple.pages", "application/vnd.google-apps.document",
+                "application/epub+zip",
+                "application/x-mobipocket-ebook",
+                "application/x-fictionbook+xml",
+                "application/x-abiword",
+                "application/vnd.apple.pages",
+                "application/vnd.google-apps.document",
             ],
             "audio": [
-                "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/aac",
-                "audio/mp3", "audio/webm", "audio/amr", "audio/midi", "audio/x-m4a",
-                "audio/x-realaudio", "audio/x-aiff", "audio/x-wav", "audio/x-matroska",
+                "audio/mpeg",
+                "audio/wav",
+                "audio/ogg",
+                "audio/flac",
+                "audio/aac",
+                "audio/mp3",
+                "audio/webm",
+                "audio/amr",
+                "audio/midi",
+                "audio/x-m4a",
+                "audio/x-realaudio",
+                "audio/x-aiff",
+                "audio/x-wav",
+                "audio/x-matroska",
             ],
             "video": [
-                "video/mp4", "video/mpeg", "video/ogg", "video/webm",
-                "video/quicktime", "video/x-msvideo", "video/x-matroska",
-                "video/x-flv", "video/x-ms-wmv", "video/3gpp", "video/3gpp2",
-                "video/h264", "video/h265", "video/x-f4v", "video/avi",
+                "video/mp4",
+                "video/mpeg",
+                "video/ogg",
+                "video/webm",
+                "video/quicktime",
+                "video/x-msvideo",
+                "video/x-matroska",
+                "video/x-flv",
+                "video/x-ms-wmv",
+                "video/3gpp",
+                "video/3gpp2",
+                "video/h264",
+                "video/h265",
+                "video/x-f4v",
+                "video/avi",
             ],
             "poll": [
-                "application/poll", "application/vnd.jivas.poll", "poll/message",
-                "application/x-poll-data", "application/jivas-poll+json", "jivas/poll",
+                "application/poll",
+                "application/vnd.jivas.poll",
+                "poll/message",
+                "application/x-poll-data",
+                "application/jivas-poll+json",
+                "jivas/poll",
             ],
         }
 
@@ -338,25 +380,31 @@ class WPPConnectAPI:
         Initializes the WWebJS session with optional custom webhook URL.
         If webhook_url is provided, it will be set for this specific session.
         """
-        self.logger.info(f"Starting register_session with webhook_url={webhook_url}, wait_qr_code={wait_qr_code}, auto_register={auto_register}")
+        self.logger.info(
+            f"Starting register_session with webhook_url={webhook_url}, wait_qr_code={wait_qr_code}, auto_register={auto_register}"
+        )
         self.logger.info(f"Using session: {self.session}, API URL: {self.api_url}")
         self.logger.info(f"Secret key available: {bool(self.secret_key)}")
-        
+
         status_resp = self.status()
         self.logger.info(f"Initial status response: {status_resp}")
-        
+
         # Check both 'state' (WWebJS) and 'status' (for test compatibility)
         state = (status_resp.get("state") or status_resp.get("status", "")).upper()
         self.logger.info(f"Detected state: {state}")
 
         # Check for unauthorized/error - try to create session (regardless of auto_register)
         # This matches WPPConnect behavior where create_session is called for auth errors
-        if "error" in status_resp or "Unauthorized" in str(status_resp.get("error", "")):
-            self.logger.warning(f"Unauthorized or error detected: {status_resp.get('error', 'Unknown error')}")
+        if "error" in status_resp or "Unauthorized" in str(
+            status_resp.get("error", "")
+        ):
+            self.logger.warning(
+                f"Unauthorized or error detected: {status_resp.get('error', 'Unknown error')}"
+            )
             self.logger.info("Attempting to create session...")
             create_res = self.create_session(webhook=webhook_url)
             self.logger.info(f"Create session response: {create_res}")
-            
+
             if not create_res.get("ok"):
                 self.logger.error("Failed to create session")
                 return {
@@ -382,8 +430,12 @@ class WPPConnectAPI:
                 "token": self.token,  # Keep for compatibility
             }
         elif state in {"QRCODE", "DISCONNECTED", "UNPAIRED", ""} and auto_register:
-            self.logger.info(f"Session state requires registration: {state}, starting session...")
-            start_res = self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
+            self.logger.info(
+                f"Session state requires registration: {state}, starting session..."
+            )
+            start_res = self.start_session(
+                webhook=webhook_url, wait_qr_code=wait_qr_code
+            )
             self.logger.info(f"Start session response: {start_res}")
 
             # If wait_qr_code is True, the QR code should already be in start_res
@@ -394,7 +446,11 @@ class WPPConnectAPI:
                 self.logger.info("Getting QR code separately...")
                 # Fallback: get QR code separately
                 qr_resp = self.qrcode()
-                qrcode_b64 = qr_resp.get("qrcode_base64") or qr_resp.get("qr") or qr_resp.get("qrcode")
+                qrcode_b64 = (
+                    qr_resp.get("qrcode_base64")
+                    or qr_resp.get("qr")
+                    or qr_resp.get("qrcode")
+                )
                 self.logger.info(f"QR code response: {qr_resp}")
 
             return {
@@ -406,28 +462,32 @@ class WPPConnectAPI:
             }
 
         self.logger.warning(f"Unexpected state: {state}, returning status")
-        
+
         # For states that might need QR code (like QRCODE, DISCONNECTED), try to get QR code
         # This matches the old WPPConnect behavior where QR code is returned even when auto_register=False
         qrcode_b64 = None
         if state in {"QRCODE", "DISCONNECTED", "UNPAIRED"}:
-            self.logger.info(f"State {state} might need QR code, attempting to get it...")
+            self.logger.info(
+                f"State {state} might need QR code, attempting to get it..."
+            )
             qr_resp = self.qrcode()
             if qr_resp.get("ok"):
                 qrcode_b64 = qr_resp.get("qrcode_base64") or qr_resp.get("qrcode")
                 self.logger.info("Successfully retrieved QR code for fallback case")
             else:
-                self.logger.warning(f"Failed to get QR code for state {state}: {qr_resp.get('error')}")
-        
+                self.logger.warning(
+                    f"Failed to get QR code for state {state}: {qr_resp.get('error')}"
+                )
+
         result = {
             "status": state,
             "message": f"Session status: {state}",
             "details": status_resp,
         }
-        
+
         if qrcode_b64:
             result["qrcode"] = qrcode_b64
-            
+
         return result
 
     # 1. Instance/session related
@@ -472,7 +532,9 @@ class WPPConnectAPI:
         else:
             # Unknown state - set empty to be safe
             result["status"] = ""
-            self.logger.warning(f"Unknown status, setting empty. Message: {message}, State: {state}")
+            self.logger.warning(
+                f"Unknown status, setting empty. Message: {message}, State: {state}"
+            )
 
         self.logger.info(f"Final status result: {result}")
         return result
@@ -489,21 +551,29 @@ class WPPConnectAPI:
 
     def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
         """POST /session/start/{sessionId} with optional webhook URL"""
-        self.logger.info(f"Starting session {self.session} with webhook={webhook}, wait_qr_code={wait_qr_code}")
-        
+        self.logger.info(
+            f"Starting session {self.session} with webhook={webhook}, wait_qr_code={wait_qr_code}"
+        )
+
         if webhook:
             # Use POST with webhook URL in body
             data = {"webhookUrl": webhook}
             self.logger.info(f"Using POST with webhook data: {data}")
             self.logger.info(f"Sending webhook URL '{webhook}' to WWebJS API")
-            result = self.send_rest_request(f"session/start/{self.session}", method="POST", data=data)
+            result = self.send_rest_request(
+                f"session/start/{self.session}", method="POST", data=data
+            )
         else:
             # Use GET for backwards compatibility
-            self.logger.info("Using GET for backwards compatibility (no webhook URL provided)")
-            result = self.send_rest_request(f"session/start/{self.session}", method="GET")
-        
+            self.logger.info(
+                "Using GET for backwards compatibility (no webhook URL provided)"
+            )
+            result = self.send_rest_request(
+                f"session/start/{self.session}", method="GET"
+            )
+
         self.logger.info(f"Start session response: {result}")
-        
+
         # Handle wait_qr_code parameter for backward compatibility
         if wait_qr_code and result.get("ok", True):
             self.logger.info("wait_qr_code=True, getting QR code...")
@@ -515,8 +585,10 @@ class WPPConnectAPI:
                 self.logger.info("Successfully added QR code to response")
             else:
                 # If QR code fails, still return the start result but log the error
-                self.logger.warning(f"Failed to get QR code: {qr_result.get('error', 'Unknown error')}")
-        
+                self.logger.warning(
+                    f"Failed to get QR code: {qr_result.get('error', 'Unknown error')}"
+                )
+
         self.logger.info(f"Final start_session result: {result}")
         return result
 
@@ -535,16 +607,14 @@ class WPPConnectAPI:
         self.logger.info(f"Getting QR code for session: {self.session}")
         try:
             # Get QR code as PNG image
-            response = self.send_rest_request(f"session/qr/{self.session}/image", method="GET")
+            response = self.send_rest_request(
+                f"session/qr/{self.session}/image", method="GET"
+            )
 
             # Convert image to base64
             qr_base64 = base64.b64encode(response["raw"]).decode("ascii")
             self.logger.info(f"Successfully encoded QR code, length: {len(qr_base64)}")
-            return {
-                "ok": True,
-                "qrcode_base64": qr_base64,
-                "qrcode": qr_base64
-            }
+            return {"ok": True, "qrcode_base64": qr_base64, "qrcode": qr_base64}
         except Exception as e:
             self.logger.error(f"Failed to get QR code: {str(e)}")
             return {"ok": False, "error": str(e)}
@@ -552,7 +622,9 @@ class WPPConnectAPI:
     def get_host_device(self) -> dict:
         """GET /client/getClassInfo/{sessionId}"""
         self.logger.info(f"Getting host device info for session: {self.session}")
-        result = self.send_rest_request(f"client/getClassInfo/{self.session}", method="GET")
+        result = self.send_rest_request(
+            f"client/getClassInfo/{self.session}", method="GET"
+        )
         self.logger.info(f"Host device info: {result}")
         return result
 
@@ -564,7 +636,7 @@ class WPPConnectAPI:
     def create_session(self, webhook: str = "") -> dict:
         """POST /session/start/{sessionId} with optional webhook URL - Start/create session in WWebJS"""
         self.logger.info(f"Creating session {self.session} with webhook={webhook}")
-        
+
         if not self.secret_key:
             # For compatibility with WPPConnect tests
             self.logger.error("secret_key required but not provided")
@@ -576,11 +648,17 @@ class WPPConnectAPI:
             data = {"webhookUrl": webhook}
             self.logger.info(f"Using POST with webhook data: {data}")
             self.logger.info(f"Sending webhook URL '{webhook}' to WWebJS API")
-            result = self.send_rest_request(f"session/start/{self.session}", method="POST", data=data)
+            result = self.send_rest_request(
+                f"session/start/{self.session}", method="POST", data=data
+            )
         else:
             # Use GET for backwards compatibility
-            self.logger.info("Using GET for backwards compatibility (no webhook URL provided)")
-            result = self.send_rest_request(f"session/start/{self.session}", method="GET")
+            self.logger.info(
+                "Using GET for backwards compatibility (no webhook URL provided)"
+            )
+            result = self.send_rest_request(
+                f"session/start/{self.session}", method="GET"
+            )
 
         self.logger.info(f"Create session response: {result}")
 
@@ -594,7 +672,6 @@ class WPPConnectAPI:
         return result
 
     # 2. Messaging
-
     def send_message(
         self,
         phone: str,
@@ -605,22 +682,30 @@ class WPPConnectAPI:
         options: Optional[dict] = None,
     ) -> dict:
         """POST /client/sendMessage/{sessionId}"""
-        self.logger.info(f"Sending message to {phone}, is_group={is_group}, message_id={message_id}")
+
+        self.logger.info(
+            f"Sending message to {phone}, is_group={is_group}, message_id={message_id}"
+        )
+
         chat_id = self._format_chat_id(phone, is_group)
         self.logger.debug(f"Formatted chat_id: {chat_id}")
 
+        # Create typed options dictionary
+        payload_options: dict = {}
+        if message_id:
+            payload_options["quotedMessageId"] = message_id
+            self.logger.info(f"Adding quoted message ID: {message_id}")
+        elif options:
+            payload_options = options
+            self.logger.info(f"Adding custom options: {options}")
+
+        # Construct payload
         data = {
             "chatId": chat_id,
             "contentType": "string",
             "content": message,
+            "options": payload_options,
         }
-
-        if message_id:
-            data["options"] = {"quotedMessageId": message_id}
-            self.logger.info(f"Adding quoted message ID: {message_id}")
-        elif options:
-            data["options"] = options
-            self.logger.info(f"Adding custom options: {options}")
 
         self.logger.debug(f"Sending message data: {data}")
         result = self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
@@ -631,7 +716,9 @@ class WPPConnectAPI:
         self, phone: str, message: str, message_id: str, is_group: bool = False
     ) -> dict:
         """POST /client/sendMessage/{sessionId} with quotedMessageId"""
-        self.logger.info(f"Sending reply to {phone}, message_id={message_id}, is_group={is_group}")
+        self.logger.info(
+            f"Sending reply to {phone}, message_id={message_id}, is_group={is_group}"
+        )
         return self.send_message(phone, message, is_group, message_id=message_id)
 
     def send_location(
@@ -651,8 +738,8 @@ class WPPConnectAPI:
             "content": {
                 "latitude": latitude,
                 "longitude": longitude,
-                "description": title
-            }
+                "description": title,
+            },
         }
 
         return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
@@ -665,9 +752,7 @@ class WPPConnectAPI:
         data = {
             "chatId": chat_id,
             "contentType": "Contact",
-            "content": {
-                "contactId": contact_chat_id
-            }
+            "content": {"contactId": contact_chat_id},
         }
 
         return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
@@ -697,8 +782,8 @@ class WPPConnectAPI:
             "content": {
                 "mimetype": file_info["mime"],
                 "data": base64_data,
-                "filename": filename or "image.jpg"
-            }
+                "filename": filename or "image.jpg",
+            },
         }
 
         if caption:
@@ -731,8 +816,8 @@ class WPPConnectAPI:
             "content": {
                 "mimetype": file_info["mime"],
                 "data": base64_data,
-                "filename": filename or "file"
-            }
+                "filename": filename or "file",
+            },
         }
 
         if caption:
@@ -766,8 +851,8 @@ class WPPConnectAPI:
             "content": {
                 "mimetype": file_info["mime"],
                 "data": base64,
-                "filename": filename or "file"
-            }
+                "filename": filename or "file",
+            },
         }
 
         if caption:
@@ -783,18 +868,23 @@ class WPPConnectAPI:
         quoted_message_id: str = "",
     ) -> dict:
         """POST /client/sendMessage/{sessionId} with MessageMediaFromURL and sendAudioAsVoice"""
+
         chat_id = self._format_chat_id(phone, is_group)
 
+        # Create a typed dictionary for options
+        options: dict = {"sendAudioAsVoice": True}
+        if quoted_message_id:
+            options["quotedMessageId"] = quoted_message_id
+
+        # Construct the data payload
         data = {
             "chatId": chat_id,
             "contentType": "MessageMediaFromURL",
             "content": file_url,
-            "options": {"sendAudioAsVoice": True}
+            "options": options,
         }
 
-        if quoted_message_id:
-            data["options"]["quotedMessageId"] = quoted_message_id
-
+        # Send the REST request
         return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
 
     def send_voice_base64(
@@ -813,9 +903,9 @@ class WPPConnectAPI:
             "content": {
                 "mimetype": "audio/ogg; codecs=opus",
                 "data": base64_ptt,
-                "filename": "voice.ogg"
+                "filename": "voice.ogg",
             },
-            "options": {"sendAudioAsVoice": True}
+            "options": {"sendAudioAsVoice": True},
         }
 
         return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
@@ -841,8 +931,8 @@ class WPPConnectAPI:
             "content": {
                 "pollName": name,
                 "pollOptions": choices,
-                "options": poll_options
-            }
+                "options": poll_options,
+            },
         }
 
         return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
@@ -851,11 +941,15 @@ class WPPConnectAPI:
         self, phone: str, message: str, is_group: bool, message_id: Optional[str] = None
     ) -> dict:
         """TODO: Status/Story messages - need to investigate WWebJS support"""
-        return {"ok": False, "error": "send_status_message not yet implemented for WWebJS"}
+        return {
+            "ok": False,
+            "error": "send_status_message not yet implemented for WWebJS",
+        }
 
     def send_link_preview(
         self, phone: str, url: str, caption: str, is_group: bool = False
     ) -> dict:
+        """Send a message containing a link and caption that generates a preview."""
         # Try sending as regular message - WWebJS should auto-generate preview
         return self.send_message(phone, f"{caption}\n{url}", is_group)
 
@@ -863,11 +957,15 @@ class WPPConnectAPI:
         self, phone: str, message: str, mentioned: List[str], is_group: bool = True
     ) -> dict:
         """TODO: Mentioned messages - need to check WWebJS options"""
-        return {"ok": False, "error": "send_mentioned_message not yet implemented for WWebJS"}
+        return {
+            "ok": False,
+            "error": "send_mentioned_message not yet implemented for WWebJS",
+        }
 
     def send_buttons_message(
         self, phone: str, text: str, buttons: List[dict], is_group: bool = False
     ) -> dict:
+        """Send an interactive buttons message (deprecated)."""
         return {"ok": False, "error": "send_buttons_message deprecated"}
 
     def send_list_message(
@@ -878,6 +976,7 @@ class WPPConnectAPI:
         sections: List[dict],
         is_group: bool = False,
     ) -> dict:
+        """Send an interactive list message (deprecated)."""
         return {"ok": False, "error": "send_list_message deprecated"}
 
     def send_order_message(
@@ -888,7 +987,10 @@ class WPPConnectAPI:
         options: Optional[dict] = None,
     ) -> dict:
         """TODO: Order messages - Business API feature"""
-        return {"ok": False, "error": "send_order_message not yet implemented for WWebJS"}
+        return {
+            "ok": False,
+            "error": "send_order_message not yet implemented for WWebJS",
+        }
 
     # 3. Groups
 
@@ -896,10 +998,7 @@ class WPPConnectAPI:
         """POST /client/createGroup/{sessionId}"""
         formatted_participants = [self._format_chat_id(p, False) for p in participants]
 
-        data = {
-            "title": name,
-            "participants": formatted_participants
-        }
+        data = {"title": name, "participants": formatted_participants}
 
         return self.send_rest_request(f"client/createGroup/{self.session}", data=data)
 
@@ -909,7 +1008,9 @@ class WPPConnectAPI:
             return {}
         group_chat_id = self._format_chat_id(group_id, True)
         data = {"groupId": group_chat_id}
-        return self.send_rest_request(f"group/getParticipants/{self.session}", data=data)
+        return self.send_rest_request(
+            f"group/getParticipants/{self.session}", data=data
+        )
 
     def leave_group(self, group_id: str) -> dict:
         """POST /group/leaveGroup/{sessionId}"""
@@ -921,71 +1022,63 @@ class WPPConnectAPI:
         """POST /group/addParticipant/{sessionId}"""
         group_chat_id = self._format_chat_id(group_id, True)
         participant_id = self._format_chat_id(phone, False)
-        data = {
-            "groupId": group_chat_id,
-            "participantId": participant_id
-        }
+        data = {"groupId": group_chat_id, "participantId": participant_id}
         return self.send_rest_request(f"group/addParticipant/{self.session}", data=data)
 
     def remove_group_participant(self, group_id: str, phone: str) -> dict:
         """POST /group/removeParticipant/{sessionId}"""
         group_chat_id = self._format_chat_id(group_id, True)
         participant_id = self._format_chat_id(phone, False)
-        data = {
-            "groupId": group_chat_id,
-            "participantId": participant_id
-        }
-        return self.send_rest_request(f"group/removeParticipant/{self.session}", data=data)
+        data = {"groupId": group_chat_id, "participantId": participant_id}
+        return self.send_rest_request(
+            f"group/removeParticipant/{self.session}", data=data
+        )
 
     def promote_group_admin(self, group_id: str, phone: str) -> dict:
         """POST /group/promoteParticipant/{sessionId}"""
         group_chat_id = self._format_chat_id(group_id, True)
         participant_id = self._format_chat_id(phone, False)
-        data = {
-            "groupId": group_chat_id,
-            "participantId": participant_id
-        }
-        return self.send_rest_request(f"group/promoteParticipant/{self.session}", data=data)
+        data = {"groupId": group_chat_id, "participantId": participant_id}
+        return self.send_rest_request(
+            f"group/promoteParticipant/{self.session}", data=data
+        )
 
     def demote_group_admin(self, group_id: str, phone: str) -> dict:
         """POST /group/demoteParticipant/{sessionId}"""
         group_chat_id = self._format_chat_id(group_id, True)
         participant_id = self._format_chat_id(phone, False)
-        data = {
-            "groupId": group_chat_id,
-            "participantId": participant_id
-        }
-        return self.send_rest_request(f"group/demoteParticipant/{self.session}", data=data)
+        data = {"groupId": group_chat_id, "participantId": participant_id}
+        return self.send_rest_request(
+            f"group/demoteParticipant/{self.session}", data=data
+        )
 
     def set_group_subject(self, group_id: str, title: str) -> dict:
         """POST /group/setSubject/{sessionId}"""
         group_chat_id = self._format_chat_id(group_id, True)
-        data = {
-            "groupId": group_chat_id,
-            "title": title
-        }
+        data = {"groupId": group_chat_id, "title": title}
         return self.send_rest_request(f"group/setSubject/{self.session}", data=data)
 
     def set_group_description(self, group_id: str, description: str) -> dict:
         """POST /group/setDescription/{sessionId}"""
         group_chat_id = self._format_chat_id(group_id, True)
-        data = {
-            "groupId": group_chat_id,
-            "description": description
-        }
+        data = {"groupId": group_chat_id, "description": description}
         return self.send_rest_request(f"group/setDescription/{self.session}", data=data)
 
     # 4. Contacts
 
     def get_contacts(self) -> dict:
         """GET /client/getContacts/{sessionId}"""
-        return self.send_rest_request(f"client/getContacts/{self.session}", method="GET")
+        return self.send_rest_request(
+            f"client/getContacts/{self.session}", method="GET"
+        )
 
     def get_contact(self, phone: str) -> dict:
         """POST /client/getContactById/{sessionId}"""
         contact_id = self._format_chat_id(phone, False)
         data = {"contactId": contact_id}
-        return self.send_rest_request(f"client/getContactById/{self.session}", data=data)
+        return self.send_rest_request(
+            f"client/getContactById/{self.session}", data=data
+        )
 
     def block_contact(self, phone: str, is_group: bool = False) -> dict:
         """POST /contact/block/{sessionId}"""
@@ -1038,10 +1131,12 @@ class WPPConnectAPI:
         """Set or clear typing status in chat"""
         chat_id = self._format_chat_id(phone, is_group)
         data = {"chatId": chat_id}
-        
+
         if value:
             # Start typing - lasts for 25 seconds
-            return self.send_rest_request(f"chat/sendStateTyping/{self.session}", data=data)
+            return self.send_rest_request(
+                f"chat/sendStateTyping/{self.session}", data=data
+            )
         else:
             # Stop typing immediately
             return self.send_rest_request(f"chat/clearState/{self.session}", data=data)
@@ -1052,10 +1147,12 @@ class WPPConnectAPI:
         """Set or clear recording status in chat"""
         chat_id = self._format_chat_id(phone, is_group)
         data = {"chatId": chat_id}
-        
+
         if value:
             # Start recording - lasts for 25 seconds (duration parameter ignored by WWebJS)
-            return self.send_rest_request(f"chat/sendStateRecording/{self.session}", data=data)
+            return self.send_rest_request(
+                f"chat/sendStateRecording/{self.session}", data=data
+            )
         else:
             # Stop recording immediately
             return self.send_rest_request(f"chat/clearState/{self.session}", data=data)
@@ -1066,12 +1163,16 @@ class WPPConnectAPI:
 
     def device_battery(self) -> dict:
         """GET /device/getBatteryLevel/{sessionId}"""
-        return self.send_rest_request(f"device/getBatteryLevel/{self.session}", method="GET")
+        return self.send_rest_request(
+            f"device/getBatteryLevel/{self.session}", method="GET"
+        )
 
     def mark_unread(self, chatid: str) -> dict:
         """POST /client/markChatUnread/{sessionId}"""
         data = {"chatId": chatid}
-        return self.send_rest_request(f"client/markChatUnread/{self.session}", data=data)
+        return self.send_rest_request(
+            f"client/markChatUnread/{self.session}", data=data
+        )
 
     def read_chat(self, chatid: str) -> dict:
         """POST /chat/sendSeen/{sessionId}"""
@@ -1082,22 +1183,23 @@ class WPPConnectAPI:
         """POST /client/getProfilePicUrl/{sessionId}"""
         contact_id = self._format_chat_id(phone, False)
         data = {"contactId": contact_id}
-        return self.send_rest_request(f"client/getProfilePicUrl/{self.session}", data=data)
+        return self.send_rest_request(
+            f"client/getProfilePicUrl/{self.session}", data=data
+        )
 
     def get_message_by_id(self, message_id: str) -> dict:
         """POST /message/getMessageById/{sessionId}"""
         data = {"messageId": message_id}
-        return self.send_rest_request(f"message/getMessageById/{self.session}", data=data)
+        return self.send_rest_request(
+            f"message/getMessageById/{self.session}", data=data
+        )
 
     def forward_messages(
         self, phone: str, message_ids: list, is_group: bool = False
     ) -> dict:
         """POST /message/forward/{sessionId}"""
         chat_id = self._format_chat_id(phone, is_group)
-        data = {
-            "chatId": chat_id,
-            "messageIds": message_ids
-        }
+        data = {"chatId": chat_id, "messageIds": message_ids}
         return self.send_rest_request(f"message/forward/{self.session}", data=data)
 
     def delete_message(
@@ -1113,7 +1215,7 @@ class WPPConnectAPI:
         data = {
             "chatId": chat_id,
             "messageId": message_id,
-            "onlyLocal": only_local
+            "onlyLocal": only_local,
             # Note: delete_media_in_device parameter not supported in WWebJS
         }
         return self.send_rest_request(f"message/delete/{self.session}", data=data)
@@ -1123,7 +1225,9 @@ class WPPConnectAPI:
     def change_username(self, name: str) -> dict:
         """POST /client/setDisplayName/{sessionId}"""
         data = {"displayName": name}
-        return self.send_rest_request(f"client/setDisplayName/{self.session}", data=data)
+        return self.send_rest_request(
+            f"client/setDisplayName/{self.session}", data=data
+        )
 
     def set_profile_status(self, status: str) -> dict:
         """POST /client/setStatus/{sessionId}"""
@@ -1136,7 +1240,9 @@ class WPPConnectAPI:
         base64_data = base64.b64encode(file_data).decode("utf-8")
 
         data = {"base64": base64_data}
-        return self.send_rest_request(f"client/setProfilePicture/{self.session}", data=data)
+        return self.send_rest_request(
+            f"client/setProfilePicture/{self.session}", data=data
+        )
 
     # Catalog & Business
 
@@ -1154,7 +1260,10 @@ class WPPConnectAPI:
 
     def change_product_image(self, product_id: str, base64_image: str) -> dict:
         """TODO: Business API - change product image"""
-        return {"ok": False, "error": "change_product_image not yet implemented for WWebJS"}
+        return {
+            "ok": False,
+            "error": "change_product_image not yet implemented for WWebJS",
+        }
 
     def get_products(
         self, phone: Optional[str] = None, qnt: Optional[int] = None
@@ -1177,7 +1286,7 @@ class WPPConnectAPI:
         return {"ok": False, "error": "get_metrics not supported in WWebJS"}
 
     @staticmethod
-    def translate_wwebjs_to_wppconnect(wwebjs_data):
+    def translate_wwebjs_to_wppconnect(wwebjs_data: dict) -> dict:
         # WPPConnectAPI.logger.info(f"wwebjs_data: {wwebjs_data}")
         """
         Translates message data from WWEBJS format to WPPConnect format.
@@ -1189,99 +1298,106 @@ class WPPConnectAPI:
             dict: Message data in WPPConnect format
         """
         # Extract the message data from WWEBJS structure
-        message = wwebjs_data.get('data', {}).get('message', {})
-        msg_data = message.get('_data', {})
-        msg_id = msg_data.get('id', {})
+        message = wwebjs_data.get("data", {}).get("message", {})
+        msg_data = message.get("_data", {})
+        msg_id = msg_data.get("id", {})
 
         # Build WPPConnect format
         wppconnect_data = {
             # WPPConnect specific fields
             "event": "onmessage",
-            "session": wwebjs_data.get('sessionId', 'Dispatcher'),
-
+            "session": wwebjs_data.get("sessionId", "Dispatcher"),
             # ID fields
-            "id": msg_id.get('_serialized', ''),
-
+            "id": msg_id.get("_serialized", ""),
             # Message content fields - from _data
-            "viewed": msg_data.get('viewed', False),
-            "body": msg_data.get('body', ''),
-            "type": msg_data.get('type', 'chat'),
-            "t": msg_data.get('t', 0),
-            "notifyName": msg_data.get('notifyName', ''),
-            "from": msg_data.get('from', ''),
-            "to": msg_data.get('to', ''),
-            "ack": msg_data.get('ack', 0),
-            "invis": msg_data.get('invis', False),
-            "isNewMsg": msg_data.get('isNewMsg', True),
-            "star": msg_data.get('star', False),
-            "kicNotified": msg_data.get('kicNotified', False),
-            "recvFresh": msg_data.get('recvFresh', True),
-            "isFromTemplate": msg_data.get('isFromTemplate', False),
-            "pollInvalidated": msg_data.get('pollInvalidated', False),
-            "isSentCagPollCreation": msg_data.get('isSentCagPollCreation', False),
-            "latestEditMsgKey": msg_data.get('latestEditMsgKey'),
-            "latestEditSenderTimestampMs": msg_data.get('latestEditSenderTimestampMs'),
-            "mentionedJidList": msg_data.get('mentionedJidList', []),
-            "groupMentions": msg_data.get('groupMentions', []),
-            "isEventCanceled": msg_data.get('isEventCanceled', False),
-            "eventInvalidated": msg_data.get('eventInvalidated', False),
-            "isVcardOverMmsDocument": msg_data.get('isVcardOverMmsDocument', False),
-            "isForwarded": msg_data.get('isForwarded', False),
-            "isQuestion": msg_data.get('isQuestion', False),
-            "hasReaction": msg_data.get('hasReaction', False),
-            "viewMode": msg_data.get('viewMode', 'VISIBLE'),
-            "messageSecret": msg_data.get('messageSecret', {}),
-            "productHeaderImageRejected": msg_data.get('productHeaderImageRejected', False),
-            "lastPlaybackProgress": msg_data.get('lastPlaybackProgress', 0),
-            "isDynamicReplyButtonsMsg": msg_data.get('isDynamicReplyButtonsMsg', False),
-            "isCarouselCard": msg_data.get('isCarouselCard', False),
-            "parentMsgId": msg_data.get('parentMsgId'),
-            "callSilenceReason": msg_data.get('callSilenceReason'),
-            "isVideoCall": msg_data.get('isVideoCall', False),
-            "callDuration": msg_data.get('callDuration'),
-            "callCreator": msg_data.get('callCreator'),
-            "callParticipants": msg_data.get('callParticipants'),
-            "isCallLink": msg_data.get('isCallLink'),
-            "callLinkToken": msg_data.get('callLinkToken'),
-            "isMdHistoryMsg": msg_data.get('isMdHistoryMsg', False),
-            "stickerSentTs": msg_data.get('stickerSentTs', 0),
-            "isAvatar": msg_data.get('isAvatar', False),
-            "lastUpdateFromServerTs": msg_data.get('lastUpdateFromServerTs', 0),
-            "invokedBotWid": msg_data.get('invokedBotWid'),
-            "bizBotType": msg_data.get('bizBotType'),
-            "botResponseTargetId": msg_data.get('botResponseTargetId'),
-            "botPluginType": msg_data.get('botPluginType'),
-            "botPluginReferenceIndex": msg_data.get('botPluginReferenceIndex'),
-            "botPluginSearchProvider": msg_data.get('botPluginSearchProvider'),
-            "botPluginSearchUrl": msg_data.get('botPluginSearchUrl'),
-            "botPluginSearchQuery": msg_data.get('botPluginSearchQuery'),
-            "botPluginMaybeParent": msg_data.get('botPluginMaybeParent', False),
-            "botReelPluginThumbnailCdnUrl": msg_data.get('botReelPluginThumbnailCdnUrl'),
-            "botMessageDisclaimerText": msg_data.get('botMessageDisclaimerText'),
-            "botMsgBodyType": msg_data.get('botMsgBodyType'),
-            "reportingTokenInfo": msg_data.get('reportingTokenInfo', {}),
-            "requiresDirectConnection": msg_data.get('requiresDirectConnection'),
-            "bizContentPlaceholderType": msg_data.get('bizContentPlaceholderType'),
-            "hostedBizEncStateMismatch": msg_data.get('hostedBizEncStateMismatch', False),
-            "senderOrRecipientAccountTypeHosted": msg_data.get('senderOrRecipientAccountTypeHosted', False),
-            "placeholderCreatedWhenAccountIsHosted": msg_data.get('placeholderCreatedWhenAccountIsHosted', False),
-
+            "viewed": msg_data.get("viewed", False),
+            "body": msg_data.get("body", ""),
+            "type": msg_data.get("type", "chat"),
+            "t": msg_data.get("t", 0),
+            "notifyName": msg_data.get("notifyName", ""),
+            "from": msg_data.get("from", ""),
+            "to": msg_data.get("to", ""),
+            "ack": msg_data.get("ack", 0),
+            "invis": msg_data.get("invis", False),
+            "isNewMsg": msg_data.get("isNewMsg", True),
+            "star": msg_data.get("star", False),
+            "kicNotified": msg_data.get("kicNotified", False),
+            "recvFresh": msg_data.get("recvFresh", True),
+            "isFromTemplate": msg_data.get("isFromTemplate", False),
+            "pollInvalidated": msg_data.get("pollInvalidated", False),
+            "isSentCagPollCreation": msg_data.get("isSentCagPollCreation", False),
+            "latestEditMsgKey": msg_data.get("latestEditMsgKey"),
+            "latestEditSenderTimestampMs": msg_data.get("latestEditSenderTimestampMs"),
+            "mentionedJidList": msg_data.get("mentionedJidList", []),
+            "groupMentions": msg_data.get("groupMentions", []),
+            "isEventCanceled": msg_data.get("isEventCanceled", False),
+            "eventInvalidated": msg_data.get("eventInvalidated", False),
+            "isVcardOverMmsDocument": msg_data.get("isVcardOverMmsDocument", False),
+            "isForwarded": msg_data.get("isForwarded", False),
+            "isQuestion": msg_data.get("isQuestion", False),
+            "hasReaction": msg_data.get("hasReaction", False),
+            "viewMode": msg_data.get("viewMode", "VISIBLE"),
+            "messageSecret": msg_data.get("messageSecret", {}),
+            "productHeaderImageRejected": msg_data.get(
+                "productHeaderImageRejected", False
+            ),
+            "lastPlaybackProgress": msg_data.get("lastPlaybackProgress", 0),
+            "isDynamicReplyButtonsMsg": msg_data.get("isDynamicReplyButtonsMsg", False),
+            "isCarouselCard": msg_data.get("isCarouselCard", False),
+            "parentMsgId": msg_data.get("parentMsgId"),
+            "callSilenceReason": msg_data.get("callSilenceReason"),
+            "isVideoCall": msg_data.get("isVideoCall", False),
+            "callDuration": msg_data.get("callDuration"),
+            "callCreator": msg_data.get("callCreator"),
+            "callParticipants": msg_data.get("callParticipants"),
+            "isCallLink": msg_data.get("isCallLink"),
+            "callLinkToken": msg_data.get("callLinkToken"),
+            "isMdHistoryMsg": msg_data.get("isMdHistoryMsg", False),
+            "stickerSentTs": msg_data.get("stickerSentTs", 0),
+            "isAvatar": msg_data.get("isAvatar", False),
+            "lastUpdateFromServerTs": msg_data.get("lastUpdateFromServerTs", 0),
+            "invokedBotWid": msg_data.get("invokedBotWid"),
+            "bizBotType": msg_data.get("bizBotType"),
+            "botResponseTargetId": msg_data.get("botResponseTargetId"),
+            "botPluginType": msg_data.get("botPluginType"),
+            "botPluginReferenceIndex": msg_data.get("botPluginReferenceIndex"),
+            "botPluginSearchProvider": msg_data.get("botPluginSearchProvider"),
+            "botPluginSearchUrl": msg_data.get("botPluginSearchUrl"),
+            "botPluginSearchQuery": msg_data.get("botPluginSearchQuery"),
+            "botPluginMaybeParent": msg_data.get("botPluginMaybeParent", False),
+            "botReelPluginThumbnailCdnUrl": msg_data.get(
+                "botReelPluginThumbnailCdnUrl"
+            ),
+            "botMessageDisclaimerText": msg_data.get("botMessageDisclaimerText"),
+            "botMsgBodyType": msg_data.get("botMsgBodyType"),
+            "reportingTokenInfo": msg_data.get("reportingTokenInfo", {}),
+            "requiresDirectConnection": msg_data.get("requiresDirectConnection"),
+            "bizContentPlaceholderType": msg_data.get("bizContentPlaceholderType"),
+            "hostedBizEncStateMismatch": msg_data.get(
+                "hostedBizEncStateMismatch", False
+            ),
+            "senderOrRecipientAccountTypeHosted": msg_data.get(
+                "senderOrRecipientAccountTypeHosted", False
+            ),
+            "placeholderCreatedWhenAccountIsHosted": msg_data.get(
+                "placeholderCreatedWhenAccountIsHosted", False
+            ),
             # WPPConnect specific fields from message level
-            "chatId": msg_data.get('from', ''),
-            "fromMe": msg_id.get('fromMe', False),
-            "timestamp": msg_data.get('t', 0),
-            "content": msg_data.get('body', ''),
-            "isGroupMsg": '@g.us' in msg_data.get('from', ''),
-            "mediaData": {}
+            "chatId": msg_data.get("from", ""),
+            "fromMe": msg_id.get("fromMe", False),
+            "timestamp": msg_data.get("t", 0),
+            "content": msg_data.get("body", ""),
+            "isGroupMsg": "@g.us" in msg_data.get("from", ""),
+            "mediaData": {},
         }
 
         # Build sender object for WPPConnect
-        sender_id = msg_data.get('from', '')
+        sender_id = msg_data.get("from", "")
         wppconnect_data["sender"] = {
             "id": sender_id,
-            "name": msg_data.get('notifyName', ''),
-            "shortName": msg_data.get('notifyName', ''),
-            "pushname": msg_data.get('notifyName', ''),
+            "name": msg_data.get("notifyName", ""),
+            "shortName": msg_data.get("notifyName", ""),
+            "pushname": msg_data.get("notifyName", ""),
             "type": "in",
             "isBusiness": False,
             "isEnterprise": False,
@@ -1289,17 +1405,14 @@ class WPPConnectAPI:
             "isContactSyncCompleted": 0,
             "textStatusLastUpdateTime": -1,
             "syncToAddressbook": True,
-            "formattedName": msg_data.get('notifyName', ''),
+            "formattedName": msg_data.get("notifyName", ""),
             "isMe": False,
             "isMyContact": True,
             "isPSA": False,
             "isUser": True,
             "isWAContact": True,
-            "profilePicThumbObj": {
-                "id": sender_id,
-                "tag": ""
-            },
-            "msgs": None
+            "profilePicThumbObj": {"id": sender_id, "tag": ""},
+            "msgs": None,
         }
 
         return wppconnect_data

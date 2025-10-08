@@ -140,4 +140,4 @@ poll_im.data = {
 
 ## 0.1.8
 - Removed outbox from wppconnect_action
--
+- Added [whatsapp-web.js](https://wwebjs.dev/) compatibility
