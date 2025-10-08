@@ -10,6 +10,7 @@ import dateutil.parser;
 import from typing { Union }
 import from logging { Logger }
 import from .modules.wppconnect_api { WPPConnectAPI }
+import from .modules.wwebjs_api { WWebJSAPI }
 import from actions.jivas.wppconnect_action.media_collection { MediaCollection }
 import from jivas.agent.modules.text.chunking { chunk_long_message }
 import from jivas.agent.memory.collection { Collection }
@@ -144,10 +145,16 @@ node WPPConnectAction(Action) {
 
     # --------------- WPPConnectAPI ----------------
 
-    def api() -> WPPConnectAPI {
+    def api() -> Union[WPPConnectAPI, WWebJSAPI] {
         # load the api instance
         if self.api_is_wwebjs{
-            import from .modules.wwebjs_api { WPPConnectAPI }
+            return WWebJSAPI(
+                api_url=self.api_url,
+                session=self.session,
+                token=self.token,
+                secret_key=self.secret_key,
+                timeout=self.request_timeout
+            );
         }
 
         return WPPConnectAPI(
@@ -252,7 +259,7 @@ node WPPConnectAction(Action) {
 
 
             } elif(message.get_type() == MessageType.MEDIA.value) {
-                file_type = WPPConnectAPI.get_file_type(mime_type=message.mime);
+                file_type = self.api().get_file_type(mime_type=message.mime);
                 content = self.sanitize_message(message = message.get_content());
                 if(file_type.get('file_type') == "poll"){
                     result = self.api().send_poll_message(phone=session_id, name=message.data.get('name'), choices=message.data.get('choices'), options=message.data.get('options'), is_group=is_group);
@@ -287,7 +294,7 @@ node WPPConnectAction(Action) {
                             result = self.api().send_message(phone=session_id, message=chunk, is_group=is_group, message_id=parent_message_id);
                         }
                     } elif(message_item.get_type() == MessageType.MEDIA.value) {
-                        file_type = WPPConnectAPI.get_file_type(mime_type=message_item.mime);
+                        file_type = self.api().get_file_type(mime_type=message_item.mime);
                         content = self.sanitize_message(message = message_item.get_content());
                         if(file_type.get('file_type') == "poll"){
                             result = self.api().send_poll_message(phone=session_id, name=message_item.data.get('name'), choices=message_item.data.get('choices'), options=message_item.data.get('options'), is_group=is_group);
