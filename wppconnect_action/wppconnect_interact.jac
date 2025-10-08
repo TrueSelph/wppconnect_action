@@ -31,6 +31,10 @@ walker wppconnect_interact(action_webhook_walker) {
     }
 
     can on_agent with Agent entry {
+        action_node = here.get_actions().get(action_label='WPPConnectAction');
+        if action_node.api_is_wwebjs {
+            import from .modules.wwebjs_api { WPPConnectAPI }
+        }
 
         # grab payload from webhook call
         payload = self.get_request_json();
@@ -317,17 +321,11 @@ walker wppconnect_interact(action_webhook_walker) {
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
 
-            interact_utterance = f'sent {data['message_type']} file in the chat';
-            existing_files_url = [];
-            existing_whatsapp_media = frame_node.data_get('whatsapp_media');
+            # grab an open media collection or create a new one for this session
+            media_collection = action_node.get_open_media_collection(session_id=frame_node.session_id, create=True);
 
-            # check for existing media
-            existing_media_url = action_node.get_whatsapp_media(within_seconds=action_node.recent_files_time_window, frame_node=frame_node);
-            if existing_media_url {
-                interact_utterance = "";
-            }
-
-
+            # if this is a new collection, we need to spawn scheduler to monitor it
+            action_node.monitor_media();
 
             # decode base64 encoded data into bytes
             file_data = base64.b64decode(data['media']);
@@ -347,28 +345,18 @@ walker wppconnect_interact(action_webhook_walker) {
             # if the file url is not available, set the source to the filename
             if not file_url {
                 self.logger.error(f"Unable to save file {output_filename} to the file system.");
+                # let's disable the typing
+                action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
+
                 return;
             }
 
-            # save to frame
-            action_node.save_whatsapp_media(file_url=file_url, data=data, frame_node=frame_node);
-
-            data['media'] = file_url;
-
-            message = (root spawn interact(
-                utterance = data['caption'] if data['caption'] else interact_utterance,
-                agent_id = agent_node.id,
-                session_id = frame_node.session_id,
-                verbose = False,
-                reporting = False,
-                channel = "whatsapp",
-                data = {"whatsapp_media": data}
-            )).message;
-
-            action_node.send_message(session_id=frame_node.session_id, message=message, is_group=data["isGroup"]);
-
-            # let's disable the typing
-            action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"], value=False);
+            # save to media collection
+            media_item = media_collection.add_media_item(
+                file_url = file_url,
+                media_type = data['message_type'],
+                data = data
+            );
         }
     }
 

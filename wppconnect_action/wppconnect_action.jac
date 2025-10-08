@@ -10,14 +10,8 @@ import dateutil.parser;
 import from typing { Union }
 import from logging { Logger }
 import from .modules.wppconnect_api { WPPConnectAPI }
-import from actions.jivas.wppconnect_action.outbox { Outbox }
-import from actions.jivas.wppconnect_action.outbox_item { OutboxItem }
-import from actions.jivas.wppconnect_action.job { Job }
-import from actions.jivas.wppconnect_action.whatsapp_media { WhatsappMedia }
-import from actions.jivas.wppconnect_action.outbox_item_status { OutboxItemStatus }
-
+import from actions.jivas.wppconnect_action.media_collection { MediaCollection }
 import from jivas.agent.modules.text.chunking { chunk_long_message }
-
 import from jivas.agent.memory.collection { Collection }
 import from jivas.agent.action.action { Action }
 import from jivas.agent.memory.interaction_response {
@@ -26,9 +20,12 @@ import from jivas.agent.memory.interaction_response {
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 import from jivas.agent.core.graph_node { GraphNode }
 import from .wppconnect_interact { wppconnect_interact }
-import from jac_cloud.core.archetype {BaseCollection, NodeAnchor}
+import from jac_cloud.core.archetype { BaseCollection, NodeAnchor, WalkerAnchor }
 import from jivas.agent.modules.data.node_pager { NodePager }
+import from jivas.agent.modules.system.common { node_obj }
+import from jivas.agent.modules.data.node_get { node_get }
 import from jivas.agent.modules.data.commit { commit }
+import from jivas.agent.action.interact { interact }
 
 
 node WPPConnectAction(Action) {
@@ -38,10 +35,13 @@ node WPPConnectAction(Action) {
     static has logger:Logger = logging.getLogger(__name__);
 
     has api_url:str = ""; # WPPConnect Server URL
+    has api_is_wwebjs: bool = False;
     has secret_key:str = ""; # WPPConnect Server Secret Key
     has token:str = ""; # WPPConnect Server API Key for this session
     has session:str = ""; # WPPConnect Server Instance ID
     has base_url:str = ""; # Jivas Base URL
+    has pulse_interval:int = 2; # pulse interval in seconds
+    has media_collecion_autoclose_window:int = 5; # autoclose window in seconds
     # API settings
     has webhook_url:str = ""; # JIVAS webhook for WPPConnect
     has webhook_token_expiry_days: int = 60; # the number of days for webhook token validity
@@ -52,27 +52,18 @@ node WPPConnectAction(Action) {
     has ignore_forwards:bool = True; # ignore forwarded messages
     has sync_pushname:bool = True; # set Agent name as pushname
     has sync_avatar:bool = True; # set Agent avatar (if present and set) as profile pic
-    # outbox settings
-    has outbox_base_rate_per_minute:int = 20;  # WhatsApp API rate limit for sending messages
-    has outbox_send_interval:float = 1.0; # the interval (delay) in seconds between sending messages from the outbox
-    has outbox_min_send_interval:float = 1.0; # the minimum interval (delay) in seconds between sending messages from the outbox
-    has outbox_max_send_interval:float = 10.0; # the maximum interval (delay) in seconds between sending messages from the outbox
-    has outbox_min_batch_size:int = 1; # the minimum batch size of messages to send from the outbox
-    has outbox_max_batch_size:int = 10; # the maximum batch size of messages to send from the outbox
     # poll settings
     has poll_manager_action:str = "PollManagerInteractAction"; # the label of the poll manager action to use for polls
-    has recent_files_time_window:int = 30; # the time window in seconds to search for recent files
-    has last_purge_outbox:str = ""; # the last time the outbox was purged
-    has outbox_threshold_days:int = 7; # the number of days to keep messages in the outbox
 
+
+    def postinit {
+        super.postinit();
+        # list of node attributes which should be excluded from export
+        self.transient_attrs += ['media_monitor_id', 'token'];
+    }
 
     def on_enable() {
         self.on_register();
-        self.start_outbox_scheduler();
-    }
-
-    def on_disable() {
-        self.stop_outbox_scheduler();
     }
 
     def on_register {
@@ -103,42 +94,10 @@ node WPPConnectAction(Action) {
     def post_register() {
         self.webhook_url = "";
         self.register_session(auto_register=True);
-        # post register procedure to start the outbox scheduler
-        self.start_outbox_scheduler();
     }
 
     def pulse() {
-        # Main scheduling pulse with adaptive rate control
-        if not self.has_outbox_items() {
-            self.stop_outbox_scheduler();
-            return;
-        }
-
-        # Check system health with exponential backoff
-        if (health_status := self.healthcheck()) != True {
-            self.logger.warning(f"Outbox scheduler backing off due to healthcheck failure.");
-            return;
-        }
-
-        # Calculate dynamic batch size based on current rate window
-        batch_size = self.calculate_dynamic_batch_size();
-
-        # Process messages with current batch size
-        (processed, successes, failures) = self.send_from_outbox(batch_size=batch_size);
-
-        # Update rate limiting parameters
-        self.update_send_parameters(successes, failures);
-
-        # Restart scheduler with new parameters if items remain
-        if self.has_outbox_items() {
-            self.restart_scheduler();
-        }
-        last_purge_outbox = datetime.now().strftime("%Y-%m-%d");
-
-        if self.last_purge_outbox != last_purge_outbox {
-            self.last_purge_outbox = last_purge_outbox;
-            self.purge_outbox(threshold_days=self.outbox_threshold_days);
-        }
+        self.autoclose_media_collections();
     }
 
     def healthcheck() -> Union[bool, dict] {
@@ -187,6 +146,9 @@ node WPPConnectAction(Action) {
 
     def api() -> WPPConnectAPI {
         # load the api instance
+        if self.api_is_wwebjs{
+            import from .modules.wwebjs_api { WPPConnectAPI }
+        }
 
         return WPPConnectAPI(
             api_url=self.api_url,
@@ -358,8 +320,37 @@ node WPPConnectAction(Action) {
         return result;
     }
 
+    def broadcast_message(message:InteractionMessage, ignore_list:list = []) -> str {
+        # processes an agent response payload format and sends a message to all session_ids via the action
+
+        agent_node = self.get_agent();
+        job_id = str(uuid.uuid4());
+
+        if((frames := agent_node.get_memory().get_frames()) and (outbox_action := self.get_agent().get_action(action_label="OutboxAction"))) {
+            # get all frames then proceed to broadcast
+            for frame_node in frames {
+                if(frame_node.session_id not in ignore_list) {
+                    if(interaction_node := frame_node.get_last_interaction()) {
+                        if interaction_node.channel in ['whatsapp'] {
+                            # add the message to the outbox
+                            messages = [{
+                                "to": frame_node.session_id,
+                                "message": message,
+                                "channel": "whatsapp"
+                            }];
+                            outbox_action.add_outbox_job(sender_action=self.get_type(), callback_url=self.webhook_url, messages=messages);
+                        }
+                    }
+                }
+            }
+            return job_id;
+        }
+
+        return None;
+    }
+
     def prepare_interaction_message(message:dict) -> InteractionMessage {
-        # prepare the interaction message based on the message type
+        # prepare the interaction message object based on the dict representation
         if not message {
             return None;
         }
@@ -389,1001 +380,189 @@ node WPPConnectAction(Action) {
         return interaction_message;
     }
 
-    def broadcast_message(message:InteractionMessage, ignore_list:list = []) -> str {
-        # processes an agent response payload format and sends a message to all session_ids via the action
+    # --------------- MEDIA MONITOR ----------------
+
+    def start_pulse() {
+        # Proceed with scheduler start
+        if pulse_action := self.get_agent().get_action(action_label="PulseAction") {
+            pulse_action.add_schedule(
+                self.get_type(),
+                f'every({self.pulse_interval}).seconds'
+            );
+        }
+    }
+
+    def stop_pulse() {
+        # stop the scheduler
+        if(pulse_action := self.get_agent().get_action(action_label="PulseAction")) {
+            # remove the scheduler from the pulse action
+            pulse_action.remove_schedule(self.get_type());
+        }
+    }
+
+    def monitor_media() {
+        # start the pulse if not already running to monitor and autoclose media collections for users
+        self.start_pulse();
+    }
+
+    def send_media_upload_event(session_id:str, media_collection:MediaCollection) {
+        # triggers interact to initiate processing of async uploaded media
 
         agent_node = self.get_agent();
-        job_id = str(uuid.uuid4());
+        frame_node = agent_node.get_memory().get_frame(agent_id = agent_node.id, session_id = session_id, force_session=True);
 
-        if(frames := agent_node.get_memory().get_frames() ) {
-            # get all frames then proceed to broadcast
-            for frame_node in frames {
-                if(frame_node.session_id not in ignore_list) {
-                    if(interaction_node := frame_node.get_last_interaction()) {
-                        if interaction_node.channel in ['whatsapp'] {
-                            # add the message to the outbox
-                            self.add_outbox_item(status=OutboxItemStatus.PENDING, job_id=job_id, session_id=frame_node.session_id, message=message);
-                        }
-                    }
-                }
-            }
+        message = (root spawn interact(
+            utterance = "I've sent media in the chat",
+            agent_id = agent_node.id,
+            session_id = session_id,
+            verbose = False,
+            reporting = False,
+            channel = "whatsapp",
+            data = {"whatsapp_media": media_collection.export_media_items()}
+        )).message;
 
-            # start the outbox scheduler
-            self.start_outbox_scheduler();
-            return job_id;
+        self.send_message(session_id=session_id, message=message);
+
+        # let's disable the typing
+        self.api().set_typing_status(phone=session_id, value=False);
+
+        # let's clean up..remove the media collection
+        media_collection.delete();
+    }
+
+    def get_open_media_collection(session_id:str, create:bool=False) -> MediaCollection {
+        # Returns an existing open media collection for the session, or creates a new one if none exists.
+        collection = self.get_collection();
+
+        media_collection = node_obj(node_get({
+            "name": "MediaCollection",
+            "archetype.collection_id": collection.id,
+            "archetype.session_id": session_id,
+            "archetype.status": "OPEN"
+        }));
+
+        if not media_collection and create {
+            media_collection = MediaCollection(collection_id=collection.id, session_id=session_id);
+            collection ++> media_collection;
+            commit(media_collection);
+        }
+
+        return media_collection;
+    }
+
+    def get_recent_media_collection(session_id:str) -> MediaCollection {
+        # Returns the most recently closed media collection for the session.
+        collection = self.get_collection();
+
+        media_collections = node_get({
+            "name": "MediaCollection",
+            "archetype.collection_id": collection.id,
+            "archetype.session_id": session_id,
+            "archetype.status": "CLOSED"
+        });
+
+        if isinstance(media_collections, list) and len(media_collections) > 0 {
+            ::py::
+            media_collections.sort(key=lambda mc: getattr(mc, "created_on", ""), reverse=True)
+            ::py::
+            return media_collections[0];
+        } elif media_collections {
+            return node_obj(media_collections);
         }
 
         return None;
     }
 
-    # --------------- OUTBOX SCHEDULER ----------------
+    def get_media_collections(session_id:str) -> list {
+        # Returns all media collections for the session.
+        collection = self.get_collection();
 
-    def restart_scheduler() {
-        # Gracefully update scheduler with new parameters
-        self.stop_outbox_scheduler();
-        self.start_outbox_scheduler();
-        self.logger.debug(f"Outbox scheduler restarted with interval {self.outbox_send_interval}s");
+        media_collections = node_get({
+            "name": "MediaCollection",
+            "archetype.collection_id": collection.id,
+            "archetype.session_id": session_id
+        });
+
+        return media_collections if media_collections else [];
     }
 
-    def has_outbox_items() -> bool {
-        jobs = self.get_jobs();
-        if jobs and len(jobs) > 0 {
-            for (job_id, job) in jobs.items() {
-                if len(job['pending']) > 0 {
-                    return True;
-                }
-            }
+    def close_media_collection(session_id:str) -> bool {
+        # Closes the open media collection for the session, if any.
+        if media_collection := self.get_open_media_collection(session_id=session_id) {
+            media_collection.close_collection();
+            self.send_media_upload_event(session_id=media_collection.session_id, media_collection=media_collection);
+            self.logger.info(f"Closed media collection for session: {session_id}");
+            return True;
         }
         return False;
     }
 
-    def start_outbox_scheduler() {
+    def autoclose_media_collections() {
+        # Autocloses open media collections that have exceeded the autoclose window.
+        collection = self.get_collection();
+        open_media_collections = node_get({
+            "name": "MediaCollection",
+            "archetype.collection_id": collection.id,
+            "archetype.status": "OPEN"
+        });
 
-        # Proceed with scheduler start
-        if self.has_outbox_items() {
-            if pulse_action := self.get_agent().get_action(action_label="PulseAction") {
-                pulse_action.add_schedule(
-                    self.get_type(),
-                    f'every({self.outbox_send_interval}).seconds'
-                );
-                self.logger.info(
-                    f"Outbox scheduler started: {self.outbox_send_interval}s interval "
-                    f"(Batch size: {self.outbox_max_batch_size})"
-                );
-            }
-        }
-    }
-
-    def stop_outbox_scheduler() {
-        # stop the outbox scheduler
-
-        if(pulse_action := self.get_agent().get_action(action_label="PulseAction")) {
-            # remove the outbox scheduler from the pulse action
-            pulse_action.remove_schedule(self.get_type());
-            self.logger.info(f"Outbox scheduler stopped");
-        }
-    }
-
-    def send_from_outbox(batch_size: int = 1) -> (int, int, int) {
-        # Enhanced batch processing with success tracking
-        if not self.has_outbox_items() {
-            return (0, 0, 0);
-        }
-
-        processed_count = 0;
-        success_count = 0;
-        failure_count = 0;
-        jobs = list(self.get_jobs().items());
-
-        while processed_count < batch_size and len(jobs) > 0 {
-            (job_id, job) = jobs.pop(0);
-
-            # Process batch slice
-            processable = min(batch_size - processed_count, len(job['pending']));
-            items = list(job['pending'].items())[:processable];
-
-            for (item_id, item) in items {
-                try {
-                    interaction_message = self.prepare_interaction_message(
-                        message=item['message']
-                    );
-                    result = self.send_message(
-                        session_id=item['session_id'],
-                        message=interaction_message
-                    );
-
-                    if result.get('status') == 'success' {
-                        job['processed'][item_id] = item;
-                        success_count += 1;
-                        new_success_rate = job['success_rate'] + success_count;
-                        self.update_job_collection(status=OutboxItemStatus.PROCESSED, item_id=item_id, job_id=job_id, success_rate=new_success_rate);
-
-                        self.update_interaction_context(item, interaction_message);
-                    } else {
-                        job['failed'][item_id] = item;
-                        failure_count += 1;
-                        self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
-                    }
-
-                    del job['pending'][item_id];
-                    processed_count += 1;
-                } except Exception as e {
-                    self.logger.error(f"Outbox message processing failed: {str(e)}");
-                    self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
-                    job['failed'][item_id] = item;
-                    del job['pending'][item_id];
-                    failure_count += 1;
-                    processed_count += 1;
-                }
-            }
-
-            # Update job state
-            self.maybe_trigger_callback(job_id, job);
-        }
-
-        return (processed_count, success_count, failure_count);
-    }
-
-    def resend_failed_outbox(batch_size: int = 1) -> dict {
-        # Enhanced batch processing with success tracking
-
-        found_failed_outbox = False;
-        jobs = self.get_jobs();
-        if jobs and len(jobs) > 0 {
-            for (job_id, job) in jobs.items() {
-                if len(job['failed']) > 0 {
-                    found_failed_outbox = True;
-                }
-            }
-        }
-
-        if not found_failed_outbox {
-            return {"message": f"No failed outbox items found."};
-        }
-
-        processed_count = 0;
-        success_count = 0;
-        failure_count = 0;
-        failed_sessions = [];
-        jobs = list(self.get_jobs().items());
-
-        while processed_count < batch_size and len(jobs) > 0 {
-            (job_id, job) = jobs.pop(0);
-
-            # Process batch slice
-            processable = min(batch_size - processed_count, len(job['failed']));
-            items = list(job['failed'].items())[:processable];
-
-            for (item_id, item) in items {
-                try {
-                    interaction_message = self.prepare_interaction_message(
-                        message=item['message']
-                    );
-                    result = self.send_message(
-                        session_id=item['session_id'],
-                        message=interaction_message
-                    );
-
-                    if result.get('status') == 'success' {
-                        job['processed'][item_id] = item;
-                        success_count += 1;
-                        new_success_rate = job['success_rate'] + success_count;
-                        self.update_job_collection(status=OutboxItemStatus.PROCESSED, item_id=item_id, job_id=job_id, success_rate=new_success_rate);
-
-                        self.update_interaction_context(item, interaction_message);
-                    } else {
-                        failed_sessions.append(item['session_id']);
-                        job['failed'][item_id] = item;
-                        failure_count += 1;
-                        self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
-                    }
-
-                    del job['failed'][item_id];
-                    processed_count += 1;
-                } except Exception as e {
-                    failed_sessions.append(item['session_id']);
-                    self.logger.error(f"Outbox message processing failed: {str(e)}");
-                    self.update_job_collection(status=OutboxItemStatus.FAILED, item_id=item_id, job_id=job_id);
-                    job['failed'][item_id] = item;
-                    failure_count += 1;
-                    processed_count += 1;
-                }
-            }
-
-            # Update job state
-            self.maybe_trigger_callback(job_id, job);
-        }
-
-        return {"message": f"Processed: {processed_count}, Success: {success_count}, Failure: {failure_count}","sessions":failed_sessions};
-    }
-
-    def update_interaction_context(item:dict, message:InteractionMessage) {
-        # Shared context update logic
-        agent_node = self.get_agent();
-        frame_node = agent_node.get_memory().get_frame(
-            agent_id=agent_node.id,
-            session_id=item['session_id'],
-            force_session=True
-        );
-        frame_node.add_unprompted_interaction(
-            message=message.get_content(),
-            channel="whatsapp"
-        );
-    }
-
-    def add_outbox_job(messages: list, callback_url: str = "", status: OutboxItemStatus = OutboxItemStatus.PENDING) -> str {
-        # Adds a batch of messages to the outbox with comprehensive validation
-        # Returns job ID if successful, empty string if no valid messages
-        self.logger.warning("adding add_outbox_job");
-
-        if not messages or not isinstance(messages, list) {
-            self.logger.error("Invalid messages format - expected list of message dicts");
-            return "";
-        }
-
-        job_id = str(uuid.uuid4());
-        valid_items = 0;
-        validation_errors = [];
-
-
-        for (index, item) in enumerate(messages) {
-            if not self.validate_message_item(item, index, validation_errors) {
-                continue;
-            }
-
-            try {
-                interaction_message = self.prepare_interaction_message(
-                    message=item['message']
-                );
-                self.add_outbox_item(
-                    status=OutboxItemStatus.PENDING,
-                    job_id=job_id,
-                    session_id=item['to'],
-                    message=interaction_message
-                );
-                valid_items += 1;
-            } except Exception as e {
-                error_msg = f"Message {index} processing failed: {str(e)}";
-                validation_errors.append(error_msg);
-                self.logger.error(error_msg);
-            }
-        }
-
-        # Clean up empty jobs
-        if valid_items == 0 {
-            self.purge_outbox(job_id=job_id);
-            self.logger.warning(f"Job {job_id} contained no valid messages");
-            if validation_errors {
-                self.logger.debug(f"Validation errors:\n" + "\n".join(validation_errors));
-            }
-            return "";
-        }
-
-        # Start scheduler only if valid messages exist
-        self.start_outbox_scheduler();
-        return job_id;
-    }
-
-    def validate_message_item(item: dict, index: int, error_log: list) -> bool {
-        # Validates individual message items with detailed error reporting
-        required_keys = {'to', 'message'};
-        message_types = {'TEXT', 'MEDIA', 'MULTI'};
-
-        if not isinstance(item, dict) {
-            error_log.append(f"Item {index}: Not a dictionary");
-            return False;
-        }
-
-        missing_keys = required_keys - item.keys();
-        if missing_keys {
-            error_log.append(f"Item {index}: Missing keys {missing_keys}");
-            return False;
-        }
-
-        message = item.get('message', {});
-        msg_type = message.get('message_type', '').upper();
-
-        if msg_type not in message_types {
-            error_log.append(f"Item {index}: Invalid message type '{msg_type}'");
-            return False;
-        }
-
-        # Type-specific validation
-        validation_map = {
-            'TEXT': self.validate_text_message,
-            'MEDIA': self.validate_media_message,
-            'MULTI': self.validate_multi_message
-        };
-
-        if not validation_map[msg_type](message, index) {
-            return False;
-        }
-
-        return True;
-    }
-
-    def validate_text_message(message: dict, index: int) -> bool {
-        if not message.get('content') {
-            self.logger.error(f"Item {index}: TEXT message missing content");
-            return False;
-        }
-        return True;
-    }
-
-    def validate_media_message(message: dict, index: int) -> bool {
-        required = {'mime', 'content', 'data'};
-        file_type = WPPConnectAPI.get_file_type(mime_type=message.get('mime', 'unknown'));
-
-        if(file_type.get('file_type') == "poll") {
-            required.remove('content');
-        }
-
-        missing = required - message.keys();
-
-        if missing {
-            self.logger.error(f"Item {index}: MEDIA message missing {missing}");
-            return False;
-        }
-
-        if (file_type.get('file_type') == "poll" and all([key in message.get('data', {}) for key in ['name', 'choices', 'options']])) {
-            return True;
-        }
-
-        if 'url' not in message['data'] {
-            self.logger.error(f"Item {index}: MEDIA message missing URL");
-            return False;
-        }
-        return True;
-    }
-
-    def validate_multi_message(message: dict, index: int) -> bool {
-        components = message.get('content', []);
-
-        if not isinstance(components, list) or len(components) < 2 {
-            self.logger.error(f"Item {index}: MULTI message requires 2+ components");
-            return False;
-        }
-
-        for (i, comp) in enumerate(components) {
-            if not comp.get('message_type') {
-                self.logger.error(f"Item {index}: Component {i} missing message_type");
-                return False;
-            }
-        }
-        return True;
-    }
-
-    def create_job_structure(callback_url: str = "") -> dict {
-        # Returns standardized job structure with metadata
-        return {
-            'pending': {},
-            'processed': {},
-            'failed': {},
-            'callback_url': callback_url,
-            'created_at': datetime.now().isoformat(),
-            'stats': {
-                'total': 0,
-                'success_rate': 0.0
-            }
-        };
-    }
-
-    def add_outbox_item(job_id: str, session_id: str, status: OutboxItemStatus = OutboxItemStatus.PENDING, message: InteractionMessage) {
-        # Adds validated item to specified job with type checking
-
-        if not all([
-            isinstance(job_id, str),
-            isinstance(session_id, str),
-            isinstance(message, InteractionMessage)
-        ]) {
-            self.logger.error("Invalid parameters for outbox item");
+        if not open_media_collections {
+            self.stop_pulse();
             return;
         }
 
-        item_id = str(uuid.uuid4());
-        self.add_outbox_item_collection(status=status, job_id= job_id, item_id=item_id, session_id=session_id, message=message);
-    }
+        now = datetime.now(timezone.utc);
 
-    def maybe_trigger_callback(job_id:str, job:dict) {
-        # Unified callback handler
-        if not job['pending'] and job.get('callback_url') {
-            status = 'success' if not job['failed'] else 'partial';
-            self.api().send_rest_request(
-                endpoint=job['callback_url'],
-                method='POST',
-                data={
-                    'status': status,
-                    'job_id': job_id,
-                    'success_count': len(job['processed']),
-                    'failure_count': len(job['failed']),
-                    'pending_count': len(job['pending']),
-                    'timestamp': datetime.now().isoformat()
-                },
-                json_body=True,
-                use_full_url=True
-            );
-        }
-    }
-
-    def clamp(value:Union[int,float], min_val:Union[int,float], max_val:Union[int,float]) -> Union[int,float] {
-        # Utility function for boundary constraints
-        return max(min_val, min(value, max_val));
-    }
-
-    def calculate_dynamic_batch_size() -> int {
-        # Calculate batch size based on success rate and current interval
-        base_size = max(1, int(self.outbox_base_rate_per_minute * (self.outbox_send_interval / 60)));
-
-        # Add jitter to prevent patterns
-        jittered_size = base_size * random.uniform(0.8, 1.2);
-
-        # Apply min/max constraints
-        return self.clamp(int(jittered_size), self.outbox_min_batch_size, self.outbox_max_batch_size);
-    }
-
-    def update_send_parameters(successes: int, failures: int) {
-        # Adaptive rate control algorithm
-        total = successes + failures;
-        success_rate = successes / total if total > 0 else 1.0;
-
-        # Calculate interval adjustment
-        if success_rate < 0.7 {
-            # Degraded performance - slow down
-            adjustment_factor = 1 + (0.7 - success_rate);
-            self.outbox_send_interval *= adjustment_factor;
-        } else {
-            # Good performance - speed up cautiously
-            adjustment_factor = 1 - (success_rate - 0.7) * 0.3;
-            self.outbox_send_interval *= adjustment_factor;
-        }
-
-        # Apply jitter and constraints
-        self.outbox_send_interval *= float(random.uniform(0.9, 1.1));
-        self.outbox_send_interval = self.clamp(
-            self.outbox_send_interval,
-            self.outbox_min_send_interval,
-            self.outbox_max_send_interval
-        );
-    }
-
-
-    # collection
-    def add_outbox_item_collection(status:OutboxItemStatus, job_id: str, item_id: str, session_id: str, message: InteractionMessage) -> Job {
-        collection = self.get_collection();
-        outbox_item = (collection spawn _add_job_collection(status=status, job_id=job_id, item_id=item_id, session_id=session_id, message=message, collection_id=collection.id)).outbox_item;
-        if outbox_item {
-            self.increment_job_count();
-        }
-        return outbox_item;
-    }
-
-
-    def get_jobs(job_id:str = "") -> dict {
-        collection = self.get_collection();
-        return (collection spawn _get_jobs(job_id=job_id)).outbox_item;
-    }
-
-    def update_job_collection(status: str="", job_id:str = "", item_id:str = "", success_rate:float = 0.0) -> Job {
-        collection = self.get_collection();
-        return (collection spawn _update_job_collection(status=status, job_id=job_id, item_id=item_id, success_rate=success_rate));
-    }
-
-    def purge_outbox(purge:bool = False, threshold_days:int = 0, status:list = [], item_id:str = "", job_id:str = "") -> bool {
-        collection = self.get_collection();
-        result = (collection spawn _purge_outbox(purge=purge, threshold_days=threshold_days, status=status, item_id=item_id, job_id=job_id));
-
-        deleted = result.deleted;
-        deleted_job = result.deleted_job;
-        deleted.extend(deleted_job);
-        total_jobs = self.get_job_count();
-        self.set_job_count(total_jobs - len(deleted_job));
-        return len(deleted) > 0;
-    }
-
-    def import_outbox(outbox: dict, purge_collection: bool = False) -> bool {
-        try {
-            collection = self.get_collection();
-
-            # purge jobs collection
-            if(purge_collection){
-                self.purge_outbox(purge=True);
-            }
-
-            # import outbox
-            for (job_id, job_data) in outbox.items() {
-                for (item_id, job) in job_data['pending'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.PENDING, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
-                }
-                for (item_id, job) in job_data['processed'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.PROCESSED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
-                }
-                for (item_id, job) in job_data['failed'].items() {
-                    self.add_outbox_item_collection(status=OutboxItemStatus.FAILED, job_id=job_id, item_id=item_id, session_id=job['session_id'], message=job['message']);
+        for mc_obj in open_media_collections {
+            updated_on = getattr(mc_obj, "updated_on", None);
+            if updated_on {
+                try {
+                    updated_dt = dateutil.parser.parse(updated_on);
+                    window = self.media_collecion_autoclose_window;
+                    if (now - updated_dt).total_seconds() > window {
+                        mc_obj.close_collection();
+                        self.send_media_upload_event(session_id=mc_obj.session_id, media_collection=mc_obj);
+                        self.logger.info(f"Autoclosed media collection for session: {mc_obj.session_id}");
+                    }
+                } except Exception as e {
+                    self.logger.error(f"Error autoclosing media collection: {e}: \n{traceback.format_exc()}\n");
                 }
             }
-
-            # Calculate dynamic batch size based on current rate window
-            batch_size = self.calculate_dynamic_batch_size();
-
-            # Process messages with current batch size
-            (processed, successes, failures) = self.send_from_outbox(batch_size=batch_size);
-
-            # Update rate limiting parameters
-            self.update_send_parameters(successes, failures);
-
-            # Restart scheduler with new parameters if items remain
-            if self.has_outbox_items() {
-                self.restart_scheduler();
-            }
-
-            return True;
-        } except Exception as e {
-            self.logger.error(f"Error importing outbox: {e}");
-            return False;
         }
     }
 
-
-    def get_job_count() -> int {
+    def delete_media_collections(session_id:str) -> bool {
+        # Deletes all closed media collections for the session.
         collection = self.get_collection();
-        return collection.data_get('job_count') or 0;
-    }
 
-    def set_job_count(amount:int) {
-        collection = self.get_collection();
-        collection.data_set('job_count', amount);
-    }
-
-    def increment_job_count(amount:int=1) -> int {
-        # Increment the job_count by the specified amount (default 1).
-        collection = self.get_collection();
-        if amount < 0 {
-            return self.get_job_count();
-        }
-
-        job_count = self.get_job_count() + 1;
-        collection.data_set('job_count', job_count);
-
-        return job_count;
-    }
-
-    def list_outbox_items(page:int, limit:int, filtered_status:list = [], filtered_sessions:list = []) -> list[dict] {
-        # Lists all document entries in the manifest with pagination.
-
-        collection = self.get_collection();
-        # Initialize pager
-        pager = NodePager(NodeAnchor.Collection, page_size=limit, current_page=page);
-
-        inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}];
-        if (filtered_status and filtered_sessions) {
-            inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id, "archetype.session_id": {"$in": filtered_sessions}, "archetype.status": {"$in": filtered_status}}];
-        }elif(filtered_sessions) {
-            inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id, "archetype.session_id": {"$in": filtered_sessions}}];
-        }elif(filtered_status) {
-            inbox_item_filter = [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id, "archetype.status": {"$in": filtered_status}}];
-        }
-
-        items = pager.get_page({
-            "$or": [
-                {"$and": inbox_item_filter}
-            ]
+        results = node_get({
+            "name": "MediaCollection",
+            "archetype.collection_id": collection.id,
+            "archetype.session_id": session_id,
+            "archetype.status": "CLOSED"
         });
 
-        processed_items = NodeAnchor.Collection.count({
-            "$and": [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}, {"archetype.status": {"$in": ["PROCESSED"]}}]
-        });
-
-        failed_items = NodeAnchor.Collection.count({
-            "$and": [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}, {"archetype.status": {"$in": ["FAILED"]}}]
-        });
-
-        pending_items = NodeAnchor.Collection.count({
-            "$and": [{"name": "OutboxItem"}, {"archetype.collection_id": collection.id}, {"archetype.status": {"$in": ["PENDING"]}}]
-        });
-
-        if not items {
-            return {};
+        # Normalize to list
+        media_collections = [];
+        if isinstance(results, list) {
+            media_collections = results;
+        } elif results {  # Single object
+            media_collections = [results];
         }
 
-        outbox_items = [];
-        sessions = [];
-        for item in items {
-            if item.session_id not in sessions {
-                sessions.append(item.session_id);
-            }
-            outbox_items.append(item.export());
+        # Delete collections
+        for media_collection in media_collections {
+            result = media_collection.delete();
+            self.logger.warning(f"purged collection {result}");
         }
 
-
-        # call export on each and convert it to a dict
-        items = [item.export() for item in items];
-        # get all info as a dict
-        pagination_info = pager.to_dict();
-
-        return {
-            "page": page,
-            "limit": limit,
-            "total_items": processed_items + pending_items + failed_items,
-            "total_pages": pagination_info.get("total_pages", 1),
-            "has_previous": pagination_info.get("has_previous", False),
-            "has_next": pagination_info.get("has_next", False),
-            "items": outbox_items,
-            "sessions": sessions,
-            "processed": processed_items,
-            "pending": pending_items,
-            "failed": failed_items
-        };
+        return bool(media_collections);  # True if any were deleted
     }
 
-
-    # handle media
-    def save_whatsapp_media(file_url:str, data:dict, frame_node:Frame) {
-        collection = self.get_collection();
-        collection spawn _save_media(session_id=frame_node.session_id, file_url=file_url, data=data);
-
+    def send_outbox_message(session_id:str, message:InteractionMessage) -> dict {
+        # sends an wppconnect message to a specified session_id via the action
+        return self.send_message(session_id=session_id, message=message);
     }
 
-    def get_whatsapp_media(within_seconds:int=0, frame_node:Frame) -> list {
-        collection = self.get_collection();
-        new_whatsapp_media = (collection spawn _get_media(session_id=frame_node.session_id, within_seconds=within_seconds)).media;
-
-        return new_whatsapp_media;
-    }
-
-    def delete_whatsapp_media(frame_node:Frame) {
-        collection = self.get_collection();
-        collection spawn _delete_media(session_id=frame_node.session_id);
-    }
-
-    def export_collection() -> dict {
-        result = self.get_jobs();
-        return {"outbox": result};
-    }
-
-    def import_collection(data:dict, purge:bool=True) -> bool {
-
-        if data {
-            outbox = data.get("outbox");
-            self.import_outbox(outbox=outbox, purge_collection = purge);
-            return True;
-        }
-        return False;
-    }
-}
-
-
-walker _save_media {
-    has session_id:str = "";
-    has file_url:str = "";
-    has data:dict = {};
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        current_time = str(datetime.now(timezone.utc));
-        whatsapp_media = WhatsappMedia(file_url=self.file_url, data=self.data, session_id=self.session_id, created_on=current_time);
-        here ++> whatsapp_media;
-        commit(whatsapp_media);
-    }
-}
-
-walker _get_media {
-    has session_id:str = "";
-    has media:list = [];
-    has within_seconds:int = 0;
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?WhatsappMedia)(?session_id == self.session_id);
-    }
-
-    can on_whatsapp_media with WhatsappMedia entry {
-        if self.within_seconds > 0 {
-            current_time = datetime.now(timezone.utc);
-
-            created_on = dateutil.parser.isoparse(here.created_on);
-
-            time_diff = (current_time - created_on).total_seconds();
-
-            if  time_diff <= self.within_seconds {
-                self.media.append(here.export());
-            }
-        } else {
-            self.media.append(here.export());
-        }
-    }
-}
-
-walker _delete_media {
-    has session_id:str = "";
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?WhatsappMedia)(?session_id == self.session_id);
-    }
-
-    can on_whatsapp_media with WhatsappMedia entry {
-        Jac.destroy(here);
-    }
-}
-
-
-walker _delete_job {
-    has job_id:str = "";
-    has deleted:list = [];
-    has job_deleted:list = [];
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?Outbox);
-    }
-
-    can on_outbox with Outbox entry {
-        if not self.job_id {
-            self.job_deleted.append(here);
-            visit [-->](`?Job);
-        } else {
-            visit [-->](`?Job)(?job_id == self.job_id);
-        }
-    }
-
-    can on_job with Job entry {
-        visit [-->](`?OutboxItem);
-
-        if len([-->]) <= 1 or not self.job_id {
-            self.job_deleted.append(here);
-        }
-    }
-
-    can on_outbox_item with OutboxItem entry {
-        self.deleted.append(here);
-    }
-
-    can on_exit with exit {
-        for item in self.deleted {
-            Jac.destroy(item);
-        }
-
-        for item in self.job_deleted {
-            Jac.destroy(item);
-        }
-    }
-
-}
-
-walker _add_job_collection {
-    has collection_id:str = "";
-    has outbox_item:OutboxItem = None;
-    has job_id:str = "";
-    has item_id:str = "";
-    has session_id:str = "";
-    has status:OutboxItemStatus = OutboxItemStatus.PENDING;
-    has message:InteractionMessage = None;
-
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?Outbox) else {
-            outbox = Outbox(collection_id=self.collection_id);
-            here ++> outbox;
-            visit [-->](`?Outbox);
-        }
-    }
-
-    can on_outbox with Outbox entry {
-        visit [-->](`?Job)(?job_id == self.job_id) else {
-            job = Job(job_id=self.job_id, collection_id=self.collection_id);
-            here ++> job;
-
-            visit [-->](`?Job)(?job_id == self.job_id);
-        }
-    }
-
-    can on_job with Job entry {
-        visit [-->](`?OutboxItem)(?item_id == self.item_id) else {
-            date_now = datetime.now().isoformat();
-            self.outbox_item = OutboxItem(item_id=self.item_id, session_id=self.session_id, added_at=date_now, message=self.message, status=self.status, collection_id=self.collection_id);
-            here ++> self.outbox_item;
-            here.total = here.total + 1;
-            here.created_at = date_now;
-        }
-    }
-}
-
-walker _update_job_collection {
-    has status:str = "";
-    has item_id:str = "";
-    has job_id:str = "";
-    has success_rate:float = 0.0;
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?Outbox);
-    }
-
-    can on_outbox with Outbox entry {
-        visit [-->](`?Job)(?job_id == self.job_id);
-    }
-
-    can on_job with Job entry {
-        if here.job_id == self.job_id {
-            if self.success_rate {
-                here.success_rate = self.success_rate / here.total;
-            }
-        }
-
-        if self.status in OutboxItemStatus {
-            visit [-->](`?OutboxItem)(?item_id == self.item_id);
-        }
-    }
-
-    can on_outbox_item with OutboxItem entry {
-        here.status = self.status;
-    }
-}
-
-walker _purge_outbox {
-    has purge:bool = False;
-    has threshold_days:int = 0;
-    has status:list = [];
-    has item_id:str = "";
-    has job_id:str = "";
-    has deleted:list = [];
-    has deleted_job:list = [];
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?Outbox);
-    }
-
-    can on_outbox with Outbox entry {
-        if self.purge {
-            self.deleted.append(here);
-        }
-
-        visit [-->](`?Job)(?job_id == self.job_id) else {
-            visit [-->](`?Job);
-        }
-    }
-
-    can on_job with Job entry {
-        if self.purge {
-            self.deleted_job.append(here);
-        } elif self.threshold_days > 0 {
-            created_dt = datetime.fromisoformat(here.created_at);
-            now = datetime.now();
-            days_old = (now - created_dt).days;
-            if days_old >= self.threshold_days {
-                self.deleted_job.append(here);
-                self.job_id = here.job_id;
-            }
-        } elif here.job_id == self.job_id {
-            self.deleted_job.append(here);
-        } else {
-            children_edges = [-->](`?OutboxItem);
-            if(len(children_edges) <= 1) {
-                self.deleted_job.append(here);
-            }
-        }
-
-        visit [-->](`?OutboxItem)(?item_id == self.item_id) else {
-            visit [-->](`?OutboxItem);
-        }
-
-    }
-
-    can on_outbox_item with OutboxItem entry {
-        if self.purge {
-            self.deleted.append(here);
-        } elif self.job_id {
-            self.deleted.append(here);
-        } elif self.item_id {
-            if here.item_id == self.item_id {
-                self.deleted.append(here);
-            }
-        } elif self.status {
-            if here.status.value in self.status {
-                self.deleted.append(here);
-            }
-        } else {
-            self.deleted.append(here);
-        }
-    }
-
-    can on_exit with exit {
-        for item in self.deleted {
-            Jac.destroy(item);
-        }
-
-        for item in self.deleted_job {
-            Jac.destroy(item);
-        }
-    }
-}
-
-walker _get_jobs {
-    has job_id:str = "";
-    has outbox_item:dict = {};
-
-    obj __specs__ {
-        static has private:bool = True;
-    }
-
-    can on_collection with Collection entry {
-        visit [-->](`?Outbox);
-    }
-
-    can on_outbox with Outbox entry {
-        if self.job_id {
-            visit [-->](`?Job)(?job_id == self.job_id);
-        } else {
-            visit [-->](`?Job);
-        }
-    }
-
-    can on_job with Job entry {
-
-        # get pending post
-        pending_outbox_item_node = [-->](`?OutboxItem)(?status == OutboxItemStatus.PENDING);
-        pending_outbox_item_data = {};
-        for item in pending_outbox_item_node {
-            pending_outbox_item_data[item.item_id] = {
-                "session_id": item.session_id,
-                "message": item.message,
-                "added_at": item.added_at
-            };
-        }
-
-        # get processed outbox item
-        processed_outbox_item_node = [-->](`?OutboxItem)(?status == OutboxItemStatus.PROCESSED);
-        processed_outbox_item_data = {};
-        for item in processed_outbox_item_node {
-            processed_outbox_item_data[item.item_id] = {
-                "session_id": item.session_id,
-                "message": item.message,
-                "added_at": item.added_at
-            };
-        }
-
-        # get failed outbox item
-        failed_outbox_item_node = [-->](`?OutboxItem)(?status == OutboxItemStatus.FAILED);
-        failed_outbox_item_data = {};
-        for item in failed_outbox_item_node {
-            failed_outbox_item_data[item.item_id] = {
-                "session_id": item.session_id,
-                "message": item.message,
-                "added_at": item.added_at
-            };
-        }
-
-        self.outbox_item[here.job_id] = {
-            "pending": pending_outbox_item_data,
-            "processed": processed_outbox_item_data,
-            "failed": failed_outbox_item_data,
-            "success_rate": here.success_rate,
-            "total": here.total
-        };
-
-    }
 }
 
