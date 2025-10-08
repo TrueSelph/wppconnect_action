@@ -6,7 +6,7 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/wppconnect_action)
 ![GitHub](https://img.shields.io/github/license/TrueSelph/wppconnect_action)
 
-JIVAS action wrapper for WhatsApp API communications using the WPPConnect API with advanced mass messaging outbox. This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version ^2.1.0.
+JIVAS action wrapper for WhatsApp API communications using the WPPConnect API. This action provides a wrapper for WhatsApp API communications using the [WPPConnect API](https://github.com/wppconnect-team/wppconnect-server). As a core action, it simplifies and streamlines interactions with WhatsApp. The package is a singleton and requires the Jivas library version ^2.1.0.
 
 ## Package Information
 
@@ -70,13 +70,7 @@ To use the WPPConnect Action, you need to set up the following configuration par
 | `chunk_length`                | int    | Maximum length of message to send. Longer texts are split into subsequent messages.          | `1024`                      |
 | `use_pushname`                | bool   | Use the WhatsApp push name as the user name when set to `True`.                              | `True`                      |
 | `ignore_newsletters`          | bool   | Ignore newsletter messages when set to `True`.                                               | `True`                      |
-| `ignore_forwards`             | bool   | Ignore forwarded messages when set to `True`.                                                | `True`                      |
-| `outbox_base_rate_per_minute` | int    | Base messages per minute (adapts dynamically).                                               | `20`                        |
-| `outbox_send_interval`        | float  | Current operational delay between batches.                                                   | `2.0`                       |
-| `outbox_min_send_interval`    | float  | Absolute minimum delay (seconds).                                                            | `1.0`                       |
-| `outbox_max_send_interval`    | float  | Maximum allowed delay (seconds).                                                             | `10.0`                      |
-| `outbox_min_batch_size`       | int    | Maximum messages per batch.                                                                  | `1`                         |
-| `outbox_max_batch_size`       | int    | Minimum messages per batch..                                                                 | `10`                        |
+| `ignore_forwards`             | bool   | Ignore forwarded messages when set to `True`.                                                | `True`                      |                                                              | `10`                        |
 | `poll_manager_action`         | str    | Action name to manage poll entries.                                                          | `PollManagerInteractAction` |
 
 ---
@@ -85,9 +79,7 @@ To use the WPPConnect Action, you need to set up the following configuration par
 
 - **Parameter Settings**: Ensure all parameters are configured based on your WPPConnect Server and JIVAS deployment requirements.
 - **Webhook URL**: The `webhook_url` must be a publicly accessible endpoint to enable event-driven communication from WPPConnect.
-- **Outbox Base Rate**: Set `outbox_base_rate_per_minute` to `20` for new numbers. This value should align with WhatsApp's acceptable rate-per-minute limits (default is `20`).
 - **Auto Callback**: This when sending or broadcasting messages in batches, this action will trigger your supplied callback upon completion.
-- **Batch Size Limits**: For Tier 2 accounts, keep `outbox_max_batch_size` at or below `10` to comply with account limitations.
 - **Validation**: Validate your API keys, tokens, and webhook URLs before deploying in production.
 - **Chunk Length**: Adjust `chunk_length` if you have use cases that involve very long text messages.
 - **Message Filtering**: Use `ignore_newsletters` and `ignore_forwards` to filter out less relevant messages and avoid unnecessary processing.
