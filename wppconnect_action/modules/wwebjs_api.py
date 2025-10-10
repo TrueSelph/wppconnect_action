@@ -138,9 +138,7 @@ class WWebJSAPI:
     @staticmethod
     def parse_inbound_message(request: dict) -> dict:
         """Parses an inbound message request payload and returns extracted values."""
-        # WWebJSAPI.logger.warning(f"Parsing inbound message request: {request}")
         request = WWebJSAPI.translate_wwebjs_to_wppconnect(request)
-        # WWebJSAPI.logger.warning(f"Transformed request: {request}")
         payload = {}
 
         try:
@@ -201,7 +199,6 @@ class WWebJSAPI:
                 payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
                 payload["message_type"] = "poll"
 
-            WWebJSAPI.logger.warning(f"Parsed inbound message: {payload}")
             return payload
 
         except Exception as e:
