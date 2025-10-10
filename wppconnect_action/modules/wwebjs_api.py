@@ -628,6 +628,19 @@ class WWebJSAPI:
         result = self.send_rest_request(
             f"client/getClassInfo/{self.session}", method="GET"
         )
+
+        if "sessionInfo" in result:
+            info = result["sessionInfo"]
+            result = {
+                "status": "success" if result.get("success") else "error",
+                "response": {
+                    "phoneNumber": info["wid"].get("_serialized"),
+                    "platform": info.get("platform"),
+                    "pushname": info.get("pushname"),
+                },
+                "mapper": "device",
+            }
+
         self.logger.info(f"Host device info: {result}")
         return result
 
@@ -904,9 +917,9 @@ class WWebJSAPI:
             "chatId": chat_id,
             "contentType": "MessageMedia",
             "content": {
-                "mimetype": "audio/ogg; codecs=opus",
+                "mimetype": "audio/mp3;",
                 "data": base64_ptt,
-                "filename": "voice.ogg",
+                "filename": "voice.mp3",
             },
             "options": {"sendAudioAsVoice": True},
         }
