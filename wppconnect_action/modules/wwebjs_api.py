@@ -193,7 +193,7 @@ class WWebJSAPI:
                 payload["media"] = request.get("body", "")
             elif payload["message_type"] in ["contacts", "vcard"]:
                 payload["contact"] = request.get("body", {})
-            elif payload["event_type"] == "onpollresponse":
+            elif payload["message_type"] == "poll":
                 payload["poll_id"] = request.get("msgId", {}).get("_serialized", "")
                 payload["selectedOptions"] = request.get("selectedOptions", "")
                 payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
@@ -625,6 +625,19 @@ class WWebJSAPI:
         result = self.send_rest_request(
             f"client/getClassInfo/{self.session}", method="GET"
         )
+
+        if "sessionInfo" in result:
+            info = result["sessionInfo"]
+            result = {
+                "status": "success" if result.get("success") else "error",
+                "response": {
+                    "phoneNumber": info["wid"].get("_serialized"),
+                    "platform": info.get("platform"),
+                    "pushname": info.get("pushname"),
+                },
+                "mapper": "device",
+            }
+
         self.logger.info(f"Host device info: {result}")
         return result
 
@@ -901,9 +914,9 @@ class WWebJSAPI:
             "chatId": chat_id,
             "contentType": "MessageMedia",
             "content": {
-                "mimetype": "audio/ogg; codecs=opus",
+                "mimetype": "audio/mp3;",
                 "data": base64_ptt,
-                "filename": "voice.ogg",
+                "filename": "voice.mp3",
             },
             "options": {"sendAudioAsVoice": True},
         }
@@ -1299,6 +1312,12 @@ class WWebJSAPI:
         """
         # Extract the message data from WWEBJS structure
         message = wwebjs_data.get("data", {}).get("message", {})
+
+        if wwebjs_data.get("dataType") == "vote_update":
+            message = (
+                wwebjs_data.get("data", {}).get("vote", {}).get("parentMessage", {})
+            )
+
         msg_data = message.get("_data", {})
         msg_id = msg_data.get("id", {})
 
@@ -1414,5 +1433,23 @@ class WWebJSAPI:
             "profilePicThumbObj": {"id": sender_id, "tag": ""},
             "msgs": None,
         }
+
+        # adjust payload for special message types
+        if wwebjs_data["dataType"] == "media":
+            wppconnect_data["body"] = (
+                wwebjs_data["data"].get("messageMedia", {}).get("data", "")
+            )
+            wppconnect_data["mimetype"] = (
+                wwebjs_data["data"].get("messageMedia", {}).get("mime_type", "")
+            )
+
+        if wwebjs_data["dataType"] == "vote_update":
+            wppconnect_data["type"] = "poll"
+            wppconnect_data["body"] = wwebjs_data["data"].get("vote", {})
+
+        # note this pulls from wppconnect_data instead of wwebjs_data
+        if message.get("type") == "location":
+            wppconnect_data["lat"] = message.get("location", {}).get("latitude", "")
+            wppconnect_data["lng"] = message.get("location", {}).get("longitude", "")
 
         return wppconnect_data

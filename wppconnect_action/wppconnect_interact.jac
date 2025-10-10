@@ -114,6 +114,12 @@ walker wppconnect_interact(action_webhook_walker) {
 
             # handle voicenote requests
             if(data['message_type'] in ['ptt']) {
+                # wwebjs sends 2 message callbacks for voicenotes (one with and one without media)
+                if (not data['media']){
+                    Jac.get_context().status = 200;
+                    disengage;
+                }
+
                 self.handle_voicenote_message(
                     data = data,
                     agent_node = here,
