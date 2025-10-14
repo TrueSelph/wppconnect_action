@@ -147,3 +147,6 @@ poll_im.data = {
 
 ## 0.1.10
 - Fixed wwebjs_api bug
+
+## 0.1.11
+- Fixed wwebjs_api healthcheck bug

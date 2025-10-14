@@ -547,7 +547,10 @@ class WWebJSAPI:
     def check_connection(self) -> dict:
         """GET /client/getState/{sessionId}"""
         self.logger.info(f"Checking connection state for session: {self.session}")
-        return self.send_rest_request(f"client/getState/{self.session}", method="GET")
+        response = self.send_rest_request(
+            f"client/getState/{self.session}", method="GET"
+        )
+        return {"status": response.get("success"), "message": response.get("state")}
 
     def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
         """POST /session/start/{sessionId} with optional webhook URL"""
