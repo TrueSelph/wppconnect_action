@@ -1040,16 +1040,17 @@ class WWebJSAPI:
         response = [
             {
                 "id": {
-                    "user": participant.get("id", {}).get("user"),
+                    "user": participant.get("id", {}).get("user").split("@")[0],
                 },
                 "formattedName": (
                     "You"
-                    if participant.get("id", {}).get("user") == host_number
-                    else participant.get("formattedName")
+                    if participant.get("id", {}).get("user").split("@")[0] == host_number
+                    else host_number
                 ),
             }
             for participant in participants
         ]
+
 
         return {
             "status": "success" if result.get("success") else "error",
