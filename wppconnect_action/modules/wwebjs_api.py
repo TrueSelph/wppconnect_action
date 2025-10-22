@@ -1030,11 +1030,30 @@ class WWebJSAPI:
             f"groupChat/getClassInfo/{self.session}", data=data
         )
 
+        participants = (
+            result.get("chat", {}).get("groupMetadata", {}).get("participants", [])
+        )
+
+        host_device = self.get_host_device().get("response", {})
+        host_number = host_device.get("phoneNumber").split("@")[0]
+
+        response = [
+            {
+                "id": {
+                    "user": participant.get("id", {}).get("user"),
+                },
+                "formattedName": (
+                    "You"
+                    if participant.get("id", {}).get("user") == host_number
+                    else participant.get("formattedName")
+                ),
+            }
+            for participant in participants
+        ]
+
         return {
             "status": "success" if result.get("success") else "error",
-            "response": result.get("chat", {})
-            .get("groupMetadata", {})
-            .get("participants", []),
+            "response": response,
         }
 
     def leave_group(self, group_id: str) -> dict:
@@ -1474,6 +1493,6 @@ class WWebJSAPI:
         )
 
         if result.get("success") and (phone_number := result["data"][0].get("phone")):
-            return phone_number
+            return phone_number.split("@")[0]
 
         return lid
