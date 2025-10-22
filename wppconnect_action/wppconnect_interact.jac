@@ -185,6 +185,12 @@ walker wppconnect_interact(action_webhook_walker) {
             }
 
             tagged_id = match.group(1);
+
+            if action_node.api_is_wwebjs {
+                tagged_id = action_node.api().convert_lid_to_phone_number(tagged_id);
+                body = body.replace(match.group(1), tagged_id);
+            }
+
             receiver = data.get('receiver').split('@')[0] if data.get('receiver') else '';
             # Remove all occurrences of the pattern in the body (case-insensitive)
             body = re.sub(tagged_id, "", body, flags=re.IGNORECASE).strip();
