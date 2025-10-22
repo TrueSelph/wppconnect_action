@@ -1493,7 +1493,7 @@ class WWebJSAPI:
             f"client/getContactLidAndPhone/{self.session}", data=data
         )
 
-        if result.get("success") and (phone_number := result["data"][0].get("phone")):
-            return phone_number.split("@")[0]
+        if result.get("success") and (phone_number := result["data"][0].get("pn")):
+            return str(phone_number.split("@")[0])
 
         return lid
