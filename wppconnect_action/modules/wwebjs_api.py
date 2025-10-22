@@ -198,6 +198,8 @@ class WWebJSAPI:
                 payload["selectedOptions"] = request.get("selectedOptions", "")
                 payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
                 payload["message_type"] = "poll"
+            else:
+                return {}
 
             return payload
 
@@ -1019,14 +1021,41 @@ class WWebJSAPI:
         return self.send_rest_request(f"client/createGroup/{self.session}", data=data)
 
     def group_members(self, group_id: str) -> dict:
-        """POST /group/getParticipants/{sessionId}"""
+        """POST /groupChat/getClassInfo/{sessionId}"""
         if not group_id:
             return {}
         group_chat_id = self._format_chat_id(group_id, True)
-        data = {"groupId": group_chat_id}
-        return self.send_rest_request(
-            f"group/getParticipants/{self.session}", data=data
+        data = {"chatId": group_chat_id}
+        result = self.send_rest_request(
+            f"groupChat/getClassInfo/{self.session}", data=data
         )
+
+        participants = (
+            result.get("chat", {}).get("groupMetadata", {}).get("participants", [])
+        )
+
+        host_device = self.get_host_device().get("response", {})
+        host_number = host_device.get("phoneNumber").split("@")[0]
+
+        response = [
+            {
+                "id": {
+                    "user": participant.get("id", {}).get("user").split("@")[0],
+                },
+                "formattedName": (
+                    "You"
+                    if participant.get("id", {}).get("user").split("@")[0]
+                    == host_number
+                    else host_number
+                ),
+            }
+            for participant in participants
+        ]
+
+        return {
+            "status": "success" if result.get("success") else "error",
+            "response": response,
+        }
 
     def leave_group(self, group_id: str) -> dict:
         """POST /group/leaveGroup/{sessionId}"""
@@ -1438,7 +1467,7 @@ class WWebJSAPI:
         }
 
         # adjust payload for special message types
-        if wwebjs_data["dataType"] == "media":
+        if wwebjs_data.get("dataType") == "media":
             wppconnect_data["body"] = (
                 wwebjs_data["data"].get("messageMedia", {}).get("data", "")
             )
@@ -1446,7 +1475,7 @@ class WWebJSAPI:
                 wwebjs_data["data"].get("messageMedia", {}).get("mime_type", "")
             )
 
-        if wwebjs_data["dataType"] == "vote_update":
+        if wwebjs_data.get("dataType") == "vote_update":
             wppconnect_data["type"] = "poll"
             wppconnect_data["body"] = wwebjs_data["data"].get("vote", {})
 
@@ -1456,3 +1485,15 @@ class WWebJSAPI:
             wppconnect_data["lng"] = message.get("location", {}).get("longitude", "")
 
         return wppconnect_data
+
+    def convert_lid_to_phone_number(self, lid: str) -> str:
+        """POST /client/getContactLidAndPhone/{sessionId}"""
+        data = {"userIds": [f"{lid}@lid"]}
+        result = self.send_rest_request(
+            f"client/getContactLidAndPhone/{self.session}", data=data
+        )
+
+        if result.get("success") and (phone_number := result["data"][0].get("phone")):
+            return phone_number.split("@")[0]
+
+        return lid
