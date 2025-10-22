@@ -154,5 +154,5 @@ poll_im.data = {
 ## 0.1.12
 - Fixed wwebjs_api message_type spam and group messaging
 
-## 0.1.12
+## 0.1.13
 - Fixed convert_lid_to_phone_number bug
