@@ -1044,13 +1044,13 @@ class WWebJSAPI:
                 },
                 "formattedName": (
                     "You"
-                    if participant.get("id", {}).get("user").split("@")[0] == host_number
+                    if participant.get("id", {}).get("user").split("@")[0]
+                    == host_number
                     else host_number
                 ),
             }
             for participant in participants
         ]
-
 
         return {
             "status": "success" if result.get("success") else "error",
