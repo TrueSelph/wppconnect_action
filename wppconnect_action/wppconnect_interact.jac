@@ -324,7 +324,7 @@ walker wppconnect_interact(action_webhook_walker) {
 
     def handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # add document resource to data node in interaction
-        if(self.is_directed_message(action_node, data)) {
+        if(self.is_directed_message(action_node, data) and action_node.handle_media) {
             # default utterance
             # at this point we validated that it warrants a response, let's issue the typing
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
