@@ -55,6 +55,7 @@ node WPPConnectAction(Action) {
     has sync_avatar:bool = True; # set Agent avatar (if present and set) as profile pic
     # poll settings
     has poll_manager_action:str = "PollManagerInteractAction"; # the label of the poll manager action to use for polls
+    has handle_media:bool = True; # handle media messages
 
 
     def postinit {

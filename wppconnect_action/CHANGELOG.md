@@ -156,3 +156,6 @@ poll_im.data = {
 
 ## 0.1.13
 - Fixed convert_lid_to_phone_number bug
+
+## 0.1.14
+- Added option to disable media message
