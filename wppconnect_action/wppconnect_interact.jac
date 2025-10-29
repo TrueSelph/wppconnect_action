@@ -330,7 +330,8 @@ walker wppconnect_interact(action_webhook_walker) {
             action_node.api().set_typing_status(phone=data["sender"], is_group=data["isGroup"]);
 
             # grab an open media collection or create a new one for this session
-            media_collection = action_node.get_open_media_collection(session_id=frame_node.session_id, create=True);
+            utterance = data['caption'] if data['caption'] else "I've sent media in the chat";
+            media_collection = action_node.get_open_media_collection(session_id=frame_node.session_id, create=True, utterance=utterance);
 
             # if this is a new collection, we need to spawn scheduler to monitor it
             action_node.monitor_media();

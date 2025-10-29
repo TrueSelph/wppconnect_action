@@ -159,3 +159,6 @@ poll_im.data = {
 
 ## 0.1.14
 - Added option to disable media message
+
+## 0.1.15
+- Fixed caption bug
