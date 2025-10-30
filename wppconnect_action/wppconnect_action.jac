@@ -420,7 +420,7 @@ node WPPConnectAction(Action) {
         frame_node = agent_node.get_memory().get_frame(agent_id = agent_node.id, session_id = session_id, force_session=True);
 
         message = (root spawn interact(
-            utterance = "I've sent media in the chat",
+            utterance = media_collection.get_utterance(),
             agent_id = agent_node.id,
             session_id = session_id,
             verbose = False,
@@ -438,7 +438,7 @@ node WPPConnectAction(Action) {
         media_collection.delete();
     }
 
-    def get_open_media_collection(session_id:str, create:bool=False) -> MediaCollection {
+    def get_open_media_collection(session_id:str, create:bool=False, utterance:str="") -> MediaCollection {
         # Returns an existing open media collection for the session, or creates a new one if none exists.
         collection = self.get_collection();
 
@@ -446,11 +446,12 @@ node WPPConnectAction(Action) {
             "name": "MediaCollection",
             "archetype.collection_id": collection.id,
             "archetype.session_id": session_id,
-            "archetype.status": "OPEN"
+            "archetype.status": "OPEN",
+            "archetype.utterance": utterance
         }));
 
         if not media_collection and create {
-            media_collection = MediaCollection(collection_id=collection.id, session_id=session_id);
+            media_collection = MediaCollection(collection_id=collection.id, session_id=session_id, utterance=utterance);
             collection ++> media_collection;
             commit(media_collection);
         }

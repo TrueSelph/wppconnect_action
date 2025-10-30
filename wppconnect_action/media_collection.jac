@@ -13,6 +13,11 @@ node MediaCollection(GraphNode) {
     has status:MediaCollectionStatus = MediaCollectionStatus.OPEN;
     has created_on:str = str((datetime.now(timezone.utc)).isoformat());
     has updated_on:str = str((datetime.now(timezone.utc)).isoformat());
+    has utterance:str = "";
+
+    def get_utterance() -> str {
+        return self.utterance;
+    }
 
     def get_status() -> MediaCollectionStatus {
         return self.status;
