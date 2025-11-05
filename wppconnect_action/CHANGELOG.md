@@ -162,3 +162,6 @@ poll_im.data = {
 
 ## 0.1.15
 - Fixed caption bug
+
+## 0.1.16
+- Fixed quotedMsg bug

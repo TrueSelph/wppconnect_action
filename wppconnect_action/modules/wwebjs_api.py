@@ -1440,6 +1440,7 @@ class WWebJSAPI:
             "content": msg_data.get("body", ""),
             "isGroupMsg": "@g.us" in msg_data.get("from", ""),
             "mediaData": {},
+            "quotedMsg": msg_data.get("quotedMsg", {}),
         }
 
         # Build sender object for WPPConnect
