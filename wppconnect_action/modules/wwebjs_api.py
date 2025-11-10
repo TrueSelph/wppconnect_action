@@ -215,18 +215,6 @@ class WWebJSAPI:
     ) -> dict:
         """Determines the MIME type of a file or URL and categorizes it."""
         detected_mime_type = None
-
-        if file_path:
-            detected_mime_type, _ = mimetypes.guess_type(file_path)
-        elif url:
-            try:
-                response = requests.head(url, allow_redirects=True)
-                detected_mime_type = response.headers.get("Content-Type")
-            except requests.RequestException as e:
-                WWebJSAPI.logger.error(f"Error making HEAD request: {e}")
-        else:
-            detected_mime_type = mime_type
-
         mime_categories = {
             "image": [
                 "image/jpeg",
@@ -305,6 +293,34 @@ class WWebJSAPI:
                 "jivas/poll",
             ],
         }
+
+        if file_path:
+            detected_mime_type, _ = mimetypes.guess_type(file_path)
+        elif url:
+            detected_mime_type = None
+            for _, mime_list in mime_categories.items():
+                for mime in mime_list:
+                    if isinstance(mime, str):
+                        parts = mime.split("/")
+                        if len(parts) > 1:
+                            ext = parts[1]
+                            if f".{ext}" in url:
+                                detected_mime_type = mime
+                                break
+                if detected_mime_type:
+                    break
+
+            if not detected_mime_type:
+
+                try:
+                    response = requests.head(url, allow_redirects=True)
+                    detected_mime_type = response.headers.get("Content-Type")
+                except requests.RequestException as e:
+                    print(f"Error making HEAD request: {e}")
+        else:
+            detected_mime_type = mime_type
+
+        print(detected_mime_type)
 
         if not detected_mime_type or detected_mime_type == "binary/octet-stream":
             file_extension = ""
@@ -1440,6 +1456,7 @@ class WWebJSAPI:
             "content": msg_data.get("body", ""),
             "isGroupMsg": "@g.us" in msg_data.get("from", ""),
             "mediaData": {},
+            "quotedMsg": msg_data.get("quotedMsg", {}),
         }
 
         # Build sender object for WPPConnect
