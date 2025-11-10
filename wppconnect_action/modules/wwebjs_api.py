@@ -194,10 +194,36 @@ class WWebJSAPI:
             elif payload["message_type"] in ["contacts", "vcard"]:
                 payload["contact"] = request.get("body", {})
             elif payload["message_type"] == "poll":
-                payload["poll_id"] = request.get("msgId", {}).get("_serialized", "")
-                payload["selectedOptions"] = request.get("selectedOptions", "")
+                payload["poll_id"] = (
+                    request.get("body", {})
+                    .get("parentMessage", {})
+                    .get("_data", {})
+                    .get("id", "")
+                    .get("id", "")
+                )
+                payload["selectedOptions"] = request.get("body", {}).get(
+                    "selectedOptions", ""
+                )
                 payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
                 payload["message_type"] = "poll"
+                _to = (
+                    request.get("body", {})
+                    .get("parentMessage", {})
+                    .get("to", "")
+                    .split("@")[0]
+                )
+                _from = (
+                    request.get("body", {})
+                    .get("parentMessage", {})
+                    .get("from", "")
+                    .split("@")[0]
+                )
+                payload["sender"] = _to
+                payload["receiver"] = _from
+                if _to == _from:
+                    payload["fromMe"] = True
+                else:
+                    payload["fromMe"] = False
             else:
                 return {}
 
@@ -297,18 +323,11 @@ class WWebJSAPI:
         if file_path:
             detected_mime_type, _ = mimetypes.guess_type(file_path)
         elif url:
-            detected_mime_type = None
-            for _, mime_list in mime_categories.items():
-                for mime in mime_list:
-                    if isinstance(mime, str):
-                        parts = mime.split("/")
-                        if len(parts) > 1:
-                            ext = parts[1]
-                            if f".{ext}" in url:
-                                detected_mime_type = mime
-                                break
-                if detected_mime_type:
-                    break
+            for _, value in mime_categories.items():
+                for mime in value:
+                    ext = mime.split("/")[1]
+                    if f".{ext}" in url:
+                        detected_mime_type = mime
 
             if not detected_mime_type:
 
@@ -969,7 +988,18 @@ class WWebJSAPI:
             },
         }
 
-        return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
+        if options:
+            data["options"] = options
+
+        result = self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
+        if result.get("success"):
+
+            return {
+                "status": "success",
+                "response": [{"id": result["message"]["_data"]["id"]["id"]}],
+                "message": result,
+            }
+        return {"status": False}
 
     def send_status_message(
         self, phone: str, message: str, is_group: bool, message_id: Optional[str] = None
