@@ -194,14 +194,32 @@ class WWebJSAPI:
             elif payload["message_type"] in ["contacts", "vcard"]:
                 payload["contact"] = request.get("body", {})
             elif payload["message_type"] == "poll":
-                payload["poll_id"] = request.get("body", {}).get("parentMessage", {}).get("_data", {}).get("id", "").get("id", "")
-                payload["selectedOptions"] = request.get("body", {}).get("selectedOptions", "")
+                payload["poll_id"] = (
+                    request.get("body", {})
+                    .get("parentMessage", {})
+                    .get("_data", {})
+                    .get("id", "")
+                    .get("id", "")
+                )
+                payload["selectedOptions"] = request.get("body", {}).get(
+                    "selectedOptions", ""
+                )
                 payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
                 payload["message_type"] = "poll"
-                _to = request.get("body", {}).get('parentMessage', {}).get("to", "").split("@")[0]
-                _from = request.get("body", {}).get('parentMessage', {}).get("from", "").split("@")[0]
-                payload['sender'] = _to
-                payload['receiver'] = _from
+                _to = (
+                    request.get("body", {})
+                    .get("parentMessage", {})
+                    .get("to", "")
+                    .split("@")[0]
+                )
+                _from = (
+                    request.get("body", {})
+                    .get("parentMessage", {})
+                    .get("from", "")
+                    .split("@")[0]
+                )
+                payload["sender"] = _to
+                payload["receiver"] = _from
                 if _to == _from:
                     payload["fromMe"] = True
                 else:
@@ -972,20 +990,16 @@ class WWebJSAPI:
 
         if options:
             data["options"] = options
-        
-
 
         result = self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
         if result.get("success"):
-            
+
             return {
-                "status": 'success',
-                "response": [{"id": result["message"]["_data"]['id']['id']}],
-                "message": result
+                "status": "success",
+                "response": [{"id": result["message"]["_data"]["id"]["id"]}],
+                "message": result,
             }
-        return {
-            "status": False
-        }
+        return {"status": False}
 
     def send_status_message(
         self, phone: str, message: str, is_group: bool, message_id: Optional[str] = None
