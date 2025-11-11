@@ -177,26 +177,32 @@ walker wppconnect_interact(action_webhook_walker) {
             }
 
             ::py::
-            match = re.search( r"@(\d+)", (body.strip()) )
+            matches = re.findall( r"@(\d+)", body )
             ::py::
 
-            if not match {
+            if not matches and data['mentionedIds'] {
+                for id in data['mentionedIds'] {
+                    matches.append(id.split('@')[0]);
+                }
+            }
+
+            if not matches {
                 return False;
             }
 
-            tagged_id = match.group(1);
+            for tagged_id in matches {
+                if action_node.api_is_wwebjs {
+                    tagged_id = action_node.api().convert_lid_to_phone_number(tagged_id);
+                    body = body.replace(tagged_id, tagged_id);
+                }
+                receiver = data.get('receiver').split('@')[0] if data.get('receiver') else '';
+                # Remove all occurrences of the pattern in the body (case-insensitive)
+                body = re.sub(tagged_id, "", body, flags=re.IGNORECASE).strip();
 
-            if action_node.api_is_wwebjs {
-                tagged_id = action_node.api().convert_lid_to_phone_number(tagged_id);
-                body = body.replace(match.group(1), tagged_id);
-            }
-
-            receiver = data.get('receiver').split('@')[0] if data.get('receiver') else '';
-            # Remove all occurrences of the pattern in the body (case-insensitive)
-            body = re.sub(tagged_id, "", body, flags=re.IGNORECASE).strip();
-
-            if(tagged_id == receiver) {
-                return True;
+                if(tagged_id == receiver) {
+                    return True;
+                    break;
+                }
             }
 
             # if we're here, it means we have those group member ID scenarios and will have to search by group ID
@@ -259,67 +265,70 @@ walker wppconnect_interact(action_webhook_walker) {
 
     def handle_voicenote_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {
         # This action downloads the voicenote audio transcribes it and passes it to interact walker as text to be processed
+        if(self.is_directed_message(action_node, data)) {
+            if(not data['author']) { # sidestep voicenotes in group chats
 
-        if(not data['author']) { # sidestep voicenotes in group chats
+                # at this point we validated that it warrants a response, let's issue the status
+                action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"]);
 
-            # at this point we validated that it warrants a response, let's issue the status
-            action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"]);
+                message = None;
+                transcription = None;
+                interact_object = None;
 
-            message = None;
-            transcription = None;
-            interact_object = None;
+                # load stt action
+                if(stt_action := agent_node.get_stt_action()) {
+                    transcription = stt_action.invoke_base64(
+                        audio_base64 = data['media']
+                    );
+                } else {
+                    self.logger.error('unable to load speech-to-text action');
+                }
 
-            # load stt action
-            if(stt_action := agent_node.get_stt_action()) {
-                transcription = stt_action.invoke_base64(
-                    audio_base64 = data['media']
-                );
-            } else {
-                self.logger.error('unable to load speech-to-text action');
-            }
+                if(transcription) {
+                    interact_object = (root spawn interact(
+                        utterance = transcription,
+                        agent_id = agent_node.id,
+                        session_id = frame_node.session_id,
+                        verbose = False,
+                        reporting = False,
+                        tts = True,
+                        channel = "whatsapp",
+                        data = {"whatsapp_voicenote": data['media']}
+                    ));
+                }
 
-            if(transcription) {
-                interact_object = (root spawn interact(
-                    utterance = transcription,
-                    agent_id = agent_node.id,
-                    session_id = frame_node.session_id,
-                    verbose = False,
-                    reporting = False,
-                    tts = True,
-                    channel = "whatsapp",
-                    data = {"whatsapp_voicenote": data['media']}
-                ));
-            }
+                # now we grab the response and send it
+                if(interact_object) {
 
-            # now we grab the response and send it
-            if(interact_object) {
+                    # dereference response for convenience
+                    has_tts_response = False;
 
-                # dereference response for convenience
-                has_tts_response = False;
+                    # check for TTS result in interact_object since tts flag was set to True
+                    audio_url = interact_object.response.get('response', {}).get('audio_url');
 
-                # check for TTS result in interact_object since tts flag was set to True
-                audio_url = interact_object.response.get('response', {}).get('audio_url');
+                    if(audio_url) {
+                        audio_base64 = action_node.api().file_url_to_base64(file_url=audio_url, force_prefix=False);
+                        # sends audio via wppconnect message using url
+                        response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio_base64);
 
-                if(audio_url) {
-                    audio_base64 = action_node.api().file_url_to_base64(file_url=audio_url, force_prefix=False);
-                    # sends audio via wppconnect message using url
-                    response = action_node.api().send_voice_base64(phone=frame_node.session_id, is_group=data["isGroup"], base64_ptt = audio_base64);
-
-                    if response.get("status") == "success" {
-                        has_tts_response = True;
+                        if response.get("status") == "success" {
+                            has_tts_response = True;
+                        }
                     }
+
+                    if(not has_tts_response) {
+                        # fall back on text reply if no tts response generated
+                        action_node.send_message(session_id=frame_node.session_id, message=interact_object.message, is_group=data["isGroup"]);
+                    }
+
                 }
 
-                if(not has_tts_response) {
-                    # fall back on text reply if no tts response generated
-                    action_node.send_message(session_id=frame_node.session_id, message=interact_object.message, is_group=data["isGroup"]);
-                }
-
+                # let's disable the status
+                action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"], value=False);
             }
 
-            # let's disable the status
-            action_node.api().set_recording_status(phone=data["sender"], is_group=data["isGroup"], value=False);
         }
+
     }
 
     def handle_media_message(data:dict, agent_node:Agent, frame_node:Frame, action_node:Action) {

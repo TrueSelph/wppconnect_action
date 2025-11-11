@@ -168,3 +168,6 @@ poll_im.data = {
 
 ## 0.1.17
 - Fixed poll bug
+
+## 0.1.18
+- Fixed voicenote and media bug

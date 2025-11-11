@@ -159,6 +159,7 @@ class WWebJSAPI:
                 "isGroup": request.get("isGroupMsg", False),
                 "isForwarded": request.get("isForwarded", False),
                 "sender_name": request.get("notifyName", ""),
+                "mentionedIds": request.get("mentionedJidList", []),
             }
 
             if isinstance(payload["fromMe"], dict):
@@ -206,6 +207,7 @@ class WWebJSAPI:
                 )
                 payload["sender"] = str(request.get("chatId", "").replace("@c.us", ""))
                 payload["message_type"] = "poll"
+
                 _to = (
                     request.get("body", {})
                     .get("parentMessage", {})
@@ -338,8 +340,6 @@ class WWebJSAPI:
                     print(f"Error making HEAD request: {e}")
         else:
             detected_mime_type = mime_type
-
-        print(detected_mime_type)
 
         if not detected_mime_type or detected_mime_type == "binary/octet-stream":
             file_extension = ""
@@ -961,7 +961,14 @@ class WWebJSAPI:
             "options": {"sendAudioAsVoice": True},
         }
 
-        return self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
+        result = self.send_rest_request(f"client/sendMessage/{self.session}", data=data)
+
+        if result.get("success"):
+            result["status"] = "success"
+            return result
+
+        result["status"] = "fail"
+        return result
 
     def send_poll_message(
         self,
@@ -1487,6 +1494,7 @@ class WWebJSAPI:
             "isGroupMsg": "@g.us" in msg_data.get("from", ""),
             "mediaData": {},
             "quotedMsg": msg_data.get("quotedMsg", {}),
+            "mentionedIds": msg_data.get("mentionedIds", []),
         }
 
         # Build sender object for WPPConnect
