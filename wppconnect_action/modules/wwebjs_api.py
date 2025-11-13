@@ -181,7 +181,7 @@ class WWebJSAPI:
 
             if payload["message_type"] == "chat":
                 payload["body"] = request.get("content", request.get("body", ""))
-            elif payload["message_type"] in ["image", "video", "document"] and payload:
+            elif payload["message_type"] in ["image", "video", "document"]:
                 payload["media"] = request.get("body", "")
                 payload["filename"] = request.get("filename", "")
                 payload["mime_type"] = request.get("mimetype", "")
