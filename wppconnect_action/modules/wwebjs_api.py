@@ -185,6 +185,9 @@ class WWebJSAPI:
                 payload["media"] = request.get("body", "")
                 payload["filename"] = request.get("filename", "")
                 payload["mime_type"] = request.get("mimetype", "")
+                if not request.get("mimetype", ""):
+                    payload["message_type"] = "ignored"
+
             elif payload["message_type"] == "location":
                 payload["location"] = {
                     "latitude": request.get("lat", ""),
@@ -1495,6 +1498,9 @@ class WWebJSAPI:
             "mediaData": {},
             "quotedMsg": msg_data.get("quotedMsg", {}),
             "mentionedIds": msg_data.get("mentionedIds", []),
+            "mimetype": wwebjs_data.get("data", {})
+            .get("messageMedia", {})
+            .get("mimetype", ""),
         }
 
         # Build sender object for WPPConnect
@@ -1527,7 +1533,7 @@ class WWebJSAPI:
                 wwebjs_data["data"].get("messageMedia", {}).get("data", "")
             )
             wppconnect_data["mimetype"] = (
-                wwebjs_data["data"].get("messageMedia", {}).get("mime_type", "")
+                wwebjs_data["data"].get("messageMedia", {}).get("mimetype", "")
             )
 
         if wwebjs_data.get("dataType") == "vote_update":
