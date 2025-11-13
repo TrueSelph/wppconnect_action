@@ -1498,7 +1498,9 @@ class WWebJSAPI:
             "mediaData": {},
             "quotedMsg": msg_data.get("quotedMsg", {}),
             "mentionedIds": msg_data.get("mentionedIds", []),
-            "mimetype": wwebjs_data.get("data", {}).get("messageMedia", {}).get("mimetype", ""),
+            "mimetype": wwebjs_data.get("data", {})
+            .get("messageMedia", {})
+            .get("mimetype", ""),
         }
 
         # Build sender object for WPPConnect
