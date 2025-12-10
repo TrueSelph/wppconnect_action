@@ -1501,6 +1501,7 @@ class WWebJSAPI:
             "mimetype": wwebjs_data.get("data", {})
             .get("messageMedia", {})
             .get("mimetype", ""),
+            "caption": msg_data.get("caption", ""),
         }
 
         # Build sender object for WPPConnect
