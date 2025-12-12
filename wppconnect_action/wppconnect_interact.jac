@@ -36,7 +36,7 @@ walker wppconnect_interact(action_webhook_walker) {
         payload = self.get_request_json();
 
         # handle request here to ensure it's worth the walk
-        if(not payload) {
+        if(not payload and not action_node) {
             Jac.get_context().status = 200;
             disengage;
         }

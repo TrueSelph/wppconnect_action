@@ -177,3 +177,6 @@ poll_im.data = {
 
 ## 0.1.20
 - Fixed caption bug. Caption was not passed.
+
+## 0.1.21
+- Fixed action_node is None bug
