@@ -180,3 +180,6 @@ poll_im.data = {
 
 ## 0.1.21
 - Fixed action_node is None bug
+
+## 0.1.22
+- Fixed s3 file url bug

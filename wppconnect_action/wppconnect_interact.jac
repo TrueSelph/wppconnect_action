@@ -65,7 +65,7 @@ walker wppconnect_interact(action_webhook_walker) {
         }
 
         # ignore loopback messages i.e. messages where sender and receiver are the same
-        if(data['sender'] == data['receiver']) {
+        if(data['sender'] == data['receiver'] or "status@broadcast" in str(data['receiver'])) {
             disengage;
         }
 
@@ -358,7 +358,7 @@ walker wppconnect_interact(action_webhook_walker) {
             action_node.save_file(output_file_path, file_data);
 
             # retrieve file url
-            file_url = action_node.get_file_url(output_file_path);
+            file_url = action_node.get_short_file_url(output_file_path, True);
 
             # if the file url is not available, set the source to the filename
             if not file_url {
