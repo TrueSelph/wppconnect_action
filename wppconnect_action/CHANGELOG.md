@@ -183,3 +183,6 @@ poll_im.data = {
 
 ## 0.1.22
 - Fixed s3 file url bug
+
+## 0.1.23
+- Stop sending messages to status@broadcast

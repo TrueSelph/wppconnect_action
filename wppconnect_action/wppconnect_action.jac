@@ -243,7 +243,7 @@ node WPPConnectAction(Action) {
         # processes an agent response payload format and sends an wppconnect message to a specified session_id via the action
         result = {};
 
-        if(message and session_id) {
+        if(message and session_id and session_id != "status@broadcast") {
 
             if(not parent_message_id) {
                 parent_message_id = message.data_get('parent_message_id');
