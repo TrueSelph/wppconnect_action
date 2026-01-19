@@ -186,3 +186,7 @@ poll_im.data = {
 
 ## 0.1.23
 - Stop sending messages to status@broadcast
+
+## 0.1.24
+- Change get_short_url to get_file_url
+- Pass mime_type to save_file
