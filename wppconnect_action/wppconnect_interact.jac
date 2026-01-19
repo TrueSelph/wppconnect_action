@@ -355,10 +355,10 @@ walker wppconnect_interact(action_webhook_walker) {
             output_file_path = f"media/{frame_node.session_id}/{output_filename}";
 
             # save document to the file system
-            action_node.save_file(output_file_path, file_data);
+            action_node.save_file(output_file_path, file_data, data['mime_type']);
 
             # retrieve file url
-            file_url = action_node.get_short_file_url(output_file_path, True);
+            file_url = action_node.get_file_url(output_file_path);
 
             # if the file url is not available, set the source to the filename
             if not file_url {
