@@ -82,6 +82,11 @@ walker wppconnect_interact(action_webhook_walker) {
                 disengage;
             }
 
+            if "@lid" in data["sender"] {
+                sender = data['sender'].replace("@lid", "")
+                data['sender'] = action_node.api().convert_lid_to_phone_number(sender);
+            }
+
             if(data['fromMe']) {
                 # if this is a human sending a message via AI's whatsapp, handle it differently here
                 if((data['event_type'] == "onack") and data["author"]) {

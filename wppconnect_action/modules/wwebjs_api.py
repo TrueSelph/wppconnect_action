@@ -151,7 +151,7 @@ class WWebJSAPI:
                 "event_type": request.get("dataType", event),
                 "message_type": request.get("type", "unknown"),
                 "author": str(request.get("author", "").replace("@c.us", "")),
-                "sender": str(request.get("from", "").replace("@c.us", "")),
+                "sender": str(str(request.get("from", "").replace("@c.us", ""))),
                 "receiver": str(request.get("to", "").replace("@c.us", "")),
                 "caption": request.get("caption", ""),
                 "location": request.get("location", {}),
