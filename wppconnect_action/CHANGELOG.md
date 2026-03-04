@@ -193,3 +193,6 @@ poll_im.data = {
 
 ## 0.1.25
 - convert sender lid to sender number
+
+## 0.1.26
+- Add missing semicolon
