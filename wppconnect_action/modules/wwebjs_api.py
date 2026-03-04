@@ -145,18 +145,13 @@ class WWebJSAPI:
             event = request.get("event")
             if event not in ["onmessage", "onpollresponse", "onack"]:
                 return {}
-            
-            sender = str(request.get("from", "").replace("@c.us", ""))
-            if "@" in sender:
-                sender = sender.split("@")[0]
-                sender = WWebJSAPI.convert_lid_to_phone_number(sender)
 
             payload = {
                 "message_id": request.get("id", ""),
                 "event_type": request.get("dataType", event),
                 "message_type": request.get("type", "unknown"),
                 "author": str(request.get("author", "").replace("@c.us", "")),
-                "sender": str(sender),
+                "sender": str(str(request.get("from", "").replace("@c.us", ""))),
                 "receiver": str(request.get("to", "").replace("@c.us", "")),
                 "caption": request.get("caption", ""),
                 "location": request.get("location", {}),
