@@ -146,6 +146,7 @@ class WWebJSAPI:
             if event not in ["onmessage", "onpollresponse", "onack"]:
                 return {}
             
+            sender = str(request.get("from", "").replace("@c.us", ""))
             if "@" in sender:
                 sender = sender.split("@")[0]
                 sender = WWebJSAPI.convert_lid_to_phone_number(sender)
